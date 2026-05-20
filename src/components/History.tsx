@@ -25,10 +25,25 @@ import {
   formatSgDateTime,
   formatYmdShort,
 } from "@/lib/format";
-import type { CalculationRecord } from "@/lib/types";
+import type {
+  CalculationRecord,
+  FullSettlementRecord,
+  ScheduledPaymentRecord,
+} from "@/lib/types";
 
 interface Props {
   records: CalculationRecord[];
+}
+
+const modeLabel: Record<CalculationRecord["mode"], string> = {
+  fullSettlement: "Full Settlement",
+  scheduled: "Scheduled",
+};
+
+function rowAmount(record: CalculationRecord): number {
+  return record.mode === "fullSettlement"
+    ? record.outputs.totalCents
+    : record.outputs.todayAmountCents;
 }
 
 export function History({ records }: Props) {
@@ -88,18 +103,19 @@ export function History({ records }: Props) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Date & time (SGT)</TableHead>
+                <TableHead>Date &amp; time (SGT)</TableHead>
+                <TableHead>Mode</TableHead>
                 <TableHead>Borrower ref</TableHead>
                 <TableHead className="text-right">Outstanding</TableHead>
                 <TableHead className="text-right">Days</TableHead>
-                <TableHead className="text-right">Total</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={5}
+                    colSpan={6}
                     className="text-center text-muted-foreground py-8"
                   >
                     No calculations match the current filters.
@@ -115,6 +131,7 @@ export function History({ records }: Props) {
                     <TableCell className="font-mono text-xs">
                       {formatSgDateTime(new Date(r.timestampUtcIso))}
                     </TableCell>
+                    <TableCell>{modeLabel[r.mode]}</TableCell>
                     <TableCell>{r.inputs.borrowerRef || "—"}</TableCell>
                     <TableCell className="text-right font-mono">
                       {centsToDisplay(r.inputs.outstandingCents)}
@@ -123,7 +140,7 @@ export function History({ records }: Props) {
                       {r.outputs.days}
                     </TableCell>
                     <TableCell className="text-right font-mono font-semibold">
-                      {centsToDisplay(r.outputs.totalCents)}
+                      {centsToDisplay(rowAmount(r))}
                     </TableCell>
                   </TableRow>
                 ))
@@ -134,7 +151,7 @@ export function History({ records }: Props) {
       </CardContent>
 
       <Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
           {selected ? <RecordDetail record={selected} /> : null}
         </DialogContent>
       </Dialog>
@@ -143,59 +160,196 @@ export function History({ records }: Props) {
 }
 
 function RecordDetail({ record }: { record: CalculationRecord }) {
-  const { inputs, outputs } = record;
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Calculation detail</DialogTitle>
+        <DialogTitle>
+          {modeLabel[record.mode]} — calculation detail
+        </DialogTitle>
         <DialogDescription className="font-mono text-xs">
-          ID {record.id.slice(0, 8)} · {formatSgDateTime(new Date(record.timestampUtcIso))} SGT
+          ID {record.id.slice(0, 8)} ·{" "}
+          {formatSgDateTime(new Date(record.timestampUtcIso))} SGT
         </DialogDescription>
       </DialogHeader>
-      <div className="space-y-2 text-sm">
-        <DetailRow label="Officer" value={record.officerName} />
-        <DetailRow label="Company" value={record.companyName || "—"} />
-        <DetailRow label="Borrower ref" value={inputs.borrowerRef || "—"} />
-        <Separator />
-        <DetailRow
-          label="Outstanding principal"
-          value={centsToDisplay(inputs.outstandingCents)}
-        />
-        <DetailRow
-          label="Interest rate"
-          value={`${inputs.ratePercent}% ${inputs.rateUnit === "annual" ? "per year" : "per month"}`}
-        />
-        <DetailRow
-          label="Last payment"
-          value={formatYmdShort(inputs.lastPaymentDate)}
-        />
-        <DetailRow
-          label="Pay-on date"
-          value={formatYmdShort(inputs.payOnDate)}
-        />
-        <DetailRow
-          label="Outstanding late fee"
-          value={centsToDisplay(inputs.outstandingLateFeeCents)}
-        />
-        <Separator />
-        <DetailRow label="Days" value={String(outputs.days)} />
-        <DetailRow
-          label="Daily rate"
-          value={formatPercent(outputs.dailyRate, 6)}
-        />
-        <DetailRow
-          label="Interest accrued"
-          value={centsToDisplay(outputs.interestCents)}
-        />
-        <Separator />
-        <div className="flex justify-between items-baseline pt-2">
-          <span className="font-semibold">TOTAL</span>
-          <span className="font-mono font-bold text-lg">
-            {centsToDisplay(outputs.totalCents)}
-          </span>
-        </div>
-      </div>
+      {record.mode === "fullSettlement" ? (
+        <FullSettlementDetail record={record} />
+      ) : (
+        <ScheduledPaymentDetail record={record} />
+      )}
     </>
+  );
+}
+
+function FullSettlementDetail({ record }: { record: FullSettlementRecord }) {
+  const { inputs, outputs } = record;
+  return (
+    <div className="space-y-2 text-sm">
+      <DetailRow label="Officer" value={record.officerName} />
+      <DetailRow label="Company" value={record.companyName || "—"} />
+      <DetailRow label="Borrower ref" value={inputs.borrowerRef || "—"} />
+      <Separator />
+      <DetailRow
+        label="Outstanding principal"
+        value={centsToDisplay(inputs.outstandingCents)}
+      />
+      <DetailRow
+        label="Interest rate"
+        value={`${inputs.ratePercent}% ${
+          inputs.rateUnit === "annual" ? "per year" : "per month"
+        }`}
+      />
+      <DetailRow
+        label="Last payment"
+        value={formatYmdShort(inputs.lastPaymentDate)}
+      />
+      <DetailRow
+        label="Pay-on date"
+        value={formatYmdShort(inputs.payOnDate)}
+      />
+      <DetailRow
+        label="Outstanding late fee"
+        value={centsToDisplay(inputs.outstandingLateFeeCents)}
+      />
+      <Separator />
+      <DetailRow label="Days" value={String(outputs.days)} />
+      <DetailRow
+        label="Daily rate"
+        value={formatPercent(outputs.dailyRate, 6)}
+      />
+      <DetailRow
+        label="Interest accrued"
+        value={centsToDisplay(outputs.interestCents)}
+      />
+      <Separator />
+      <div className="flex justify-between items-baseline pt-2">
+        <span className="font-semibold">TOTAL</span>
+        <span className="font-mono font-bold text-lg">
+          {centsToDisplay(outputs.totalCents)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function ScheduledPaymentDetail({
+  record,
+}: {
+  record: ScheduledPaymentRecord;
+}) {
+  const { inputs, outputs } = record;
+  return (
+    <div className="space-y-2 text-sm">
+      <DetailRow label="Officer" value={record.officerName} />
+      <DetailRow label="Company" value={record.companyName || "—"} />
+      <DetailRow label="Borrower ref" value={inputs.borrowerRef || "—"} />
+      <Separator />
+      <DetailRow
+        label="Original principal"
+        value={centsToDisplay(inputs.originalPrincipalCents)}
+      />
+      <DetailRow
+        label="Total instalments"
+        value={String(inputs.totalInstalments)}
+      />
+      <DetailRow
+        label="Already paid"
+        value={String(inputs.instalmentsAlreadyPaid)}
+      />
+      <DetailRow
+        label="Outstanding principal"
+        value={centsToDisplay(inputs.outstandingCents)}
+      />
+      <DetailRow
+        label="Interest rate"
+        value={`${inputs.ratePercent}% ${
+          inputs.rateUnit === "annual" ? "per year" : "per month"
+        }`}
+      />
+      <DetailRow
+        label="Last payment"
+        value={formatYmdShort(inputs.lastPaymentDate)}
+      />
+      <DetailRow
+        label="Pay-on date"
+        value={formatYmdShort(inputs.payOnDate)}
+      />
+      <Separator />
+      <DetailRow label="Days" value={String(outputs.days)} />
+      <DetailRow
+        label="Daily rate"
+        value={formatPercent(outputs.dailyRate, 6)}
+      />
+      <DetailRow
+        label="Principal portion"
+        value={centsToDisplay(outputs.principalPortionCents)}
+      />
+      <DetailRow
+        label="Interest portion"
+        value={centsToDisplay(outputs.interestPortionCents)}
+      />
+      <Separator />
+      <div className="flex justify-between items-baseline pt-2">
+        <span className="font-semibold">TODAY'S AMOUNT</span>
+        <span className="font-mono font-bold text-lg">
+          {centsToDisplay(outputs.todayAmountCents)}
+        </span>
+      </div>
+      <DetailRow
+        label="New outstanding"
+        value={centsToDisplay(outputs.newOutstandingCents)}
+      />
+      <DetailRow
+        label="Next due date"
+        value={formatYmdShort(outputs.nextDueDate)}
+      />
+      <DetailRow
+        label="Days to next due"
+        value={`${outputs.daysFromPayOnToNextDue} days`}
+      />
+
+      {outputs.remainingSchedule.length > 0 ? (
+        <>
+          <Separator />
+          <p className="text-sm font-semibold">
+            Remaining schedule ({outputs.remainingSchedule.length})
+          </p>
+          <div className="rounded-md border overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Due</TableHead>
+                  <TableHead className="text-right">Days</TableHead>
+                  <TableHead className="text-right">Principal</TableHead>
+                  <TableHead className="text-right">Interest</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {outputs.remainingSchedule.map((r) => (
+                  <TableRow key={r.rowNumber}>
+                    <TableCell className="font-mono text-xs">
+                      {formatYmdShort(r.dueDate)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono">
+                      {r.daysInPeriod}
+                    </TableCell>
+                    <TableCell className="text-right font-mono">
+                      {centsToDisplay(r.principalCents)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono">
+                      {centsToDisplay(r.interestCents)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono font-semibold">
+                      {centsToDisplay(r.totalCents)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
+      ) : null}
+    </div>
   );
 }
 

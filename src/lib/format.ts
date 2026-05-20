@@ -9,6 +9,10 @@ export function parseYmdLocal(ymd: string): Date {
   return parse(ymd, "yyyy-MM-dd", new Date());
 }
 
+export function dateToYmdLocal(date: Date): string {
+  return formatDate(date, "yyyy-MM-dd");
+}
+
 export function todayYmdLocal(): string {
   return formatDate(new Date(), "yyyy-MM-dd");
 }

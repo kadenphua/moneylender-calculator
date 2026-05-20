@@ -1,6 +1,6 @@
-import type { RateUnit } from "./calc";
+import type { CalculationMode, RateUnit } from "./calc";
 
-export interface CalculationInputs {
+export interface FullSettlementInputsStored {
   borrowerRef: string;
   outstandingCents: number;
   rateUnit: RateUnit;
@@ -10,7 +10,7 @@ export interface CalculationInputs {
   outstandingLateFeeCents: number;
 }
 
-export interface CalculationOutputs {
+export interface FullSettlementOutputsStored {
   days: number;
   dailyRate: number;
   interestCents: number;
@@ -18,11 +18,60 @@ export interface CalculationOutputs {
   totalCents: number;
 }
 
-export interface CalculationRecord {
+export interface ScheduledPaymentInputsStored {
+  borrowerRef: string;
+  originalPrincipalCents: number;
+  totalInstalments: number;
+  instalmentsAlreadyPaid: number;
+  outstandingCents: number;
+  rateUnit: RateUnit;
+  ratePercent: number;
+  lastPaymentDate: string;
+  payOnDate: string;
+  principalPortionCents: number;
+}
+
+export interface ScheduleRowStored {
+  rowNumber: number;
+  dueDate: string;
+  daysInPeriod: number;
+  principalCents: number;
+  interestCents: number;
+  totalCents: number;
+  outstandingAfterRowCents: number;
+}
+
+export interface ScheduledPaymentOutputsStored {
+  days: number;
+  dailyRate: number;
+  principalPortionCents: number;
+  interestPortionCents: number;
+  todayAmountCents: number;
+  newOutstandingCents: number;
+  nextDueDate: string;
+  daysFromPayOnToNextDue: number;
+  remainingSchedule: ScheduleRowStored[];
+}
+
+interface RecordBase {
   id: string;
   timestampUtcIso: string;
   officerName: string;
   companyName: string;
-  inputs: CalculationInputs;
-  outputs: CalculationOutputs;
 }
+
+export interface FullSettlementRecord extends RecordBase {
+  mode: "fullSettlement";
+  inputs: FullSettlementInputsStored;
+  outputs: FullSettlementOutputsStored;
+}
+
+export interface ScheduledPaymentRecord extends RecordBase {
+  mode: "scheduled";
+  inputs: ScheduledPaymentInputsStored;
+  outputs: ScheduledPaymentOutputsStored;
+}
+
+export type CalculationRecord = FullSettlementRecord | ScheduledPaymentRecord;
+
+export type { CalculationMode };

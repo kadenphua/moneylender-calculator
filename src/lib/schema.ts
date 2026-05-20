@@ -41,3 +41,56 @@ export const calculatorFormSchema = z
 
 export type CalculatorFormValues = z.input<typeof calculatorFormSchema>;
 export type CalculatorFormParsed = z.output<typeof calculatorFormSchema>;
+
+const requiredInt = (msg = "Required") =>
+  z.preprocess(
+    (v) => (typeof v === "number" && Number.isNaN(v) ? undefined : v),
+    z.number({ message: msg }).int("Must be a whole number"),
+  );
+
+export const scheduledPaymentFormSchema = z
+  .object({
+    borrowerRef: z.string().max(50, "Max 50 characters"),
+    originalPrincipalDollars: requiredNumber().pipe(
+      z.number().positive("Must be greater than 0"),
+    ),
+    totalInstalments: requiredInt().pipe(
+      z.number().int().min(1, "Must be at least 1"),
+    ),
+    instalmentsAlreadyPaid: requiredInt("Required").pipe(
+      z.number().int().min(0, "Must be 0 or more"),
+    ),
+    outstandingDollars: requiredNumber().pipe(
+      z.number().positive("Must be greater than 0"),
+    ),
+    rateUnit: z.enum(["annual", "monthly"]),
+    ratePercent: requiredNumber().pipe(
+      z
+        .number()
+        .positive("Must be greater than 0")
+        .lt(1000, "Must be less than 1000"),
+    ),
+    lastPaymentDate: ymd,
+    payOnDate: ymd,
+    principalPortionDollars: requiredNumber().pipe(
+      z.number().positive("Must be greater than 0"),
+    ),
+  })
+  .refine((d) => d.instalmentsAlreadyPaid < d.totalInstalments, {
+    message: "Must be less than total instalments",
+    path: ["instalmentsAlreadyPaid"],
+  })
+  .refine((d) => d.payOnDate >= d.lastPaymentDate, {
+    message: "Pay-on date must be on or after last payment date",
+    path: ["payOnDate"],
+  })
+  .refine(
+    (d) => d.principalPortionDollars <= d.outstandingDollars,
+    {
+      message: "Principal portion cannot exceed outstanding principal",
+      path: ["principalPortionDollars"],
+    },
+  );
+
+export type ScheduledPaymentFormValues = z.input<typeof scheduledPaymentFormSchema>;
+export type ScheduledPaymentFormParsed = z.output<typeof scheduledPaymentFormSchema>;

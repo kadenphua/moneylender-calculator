@@ -1,18 +1,39 @@
-import { centsToReceiptDisplay, formatPercent, formatSgDateTime, formatYmdReceipt } from "@/lib/format";
-import type { CalculationRecord } from "@/lib/types";
+import {
+  centsToReceiptDisplay,
+  formatPercent,
+  formatSgDateTime,
+  formatYmdReceipt,
+} from "@/lib/format";
+import type {
+  CalculationRecord,
+  FullSettlementRecord,
+  ScheduledPaymentRecord,
+} from "@/lib/types";
 
 interface Props {
   record: CalculationRecord;
 }
 
 export function PrintReceipt({ record }: Props) {
+  return (
+    <div className="print-receipt hidden print:block">
+      {record.mode === "fullSettlement" ? (
+        <FullSettlementReceipt record={record} />
+      ) : (
+        <ScheduledPaymentReceipt record={record} />
+      )}
+    </div>
+  );
+}
+
+function FullSettlementReceipt({ record }: { record: FullSettlementRecord }) {
   const { inputs, outputs } = record;
   const receiptIdShort = record.id.slice(0, 8);
   const printedAt = formatSgDateTime(new Date(record.timestampUtcIso));
   const rateLabel = inputs.rateUnit === "annual" ? "per year" : "per month";
 
   return (
-    <div className="print-receipt hidden print:block">
+    <>
       <div className="text-center mb-6">
         <div className="text-xl font-bold">{record.companyName || "—"}</div>
         <div className="text-lg mt-2 tracking-wider">SETTLEMENT QUOTATION</div>
@@ -28,16 +49,31 @@ export function PrintReceipt({ record }: Props) {
       <hr className="border-t border-black my-3" />
 
       <div className="space-y-1 text-sm">
-        <Row label="Outstanding principal" value={centsToReceiptDisplay(inputs.outstandingCents)} />
-        <Row label="Last payment date" value={formatYmdReceipt(inputs.lastPaymentDate)} />
-        <Row label="Settlement date" value={formatYmdReceipt(inputs.payOnDate)} />
+        <Row
+          label="Outstanding principal"
+          value={centsToReceiptDisplay(inputs.outstandingCents)}
+        />
+        <Row
+          label="Last payment date"
+          value={formatYmdReceipt(inputs.lastPaymentDate)}
+        />
+        <Row
+          label="Settlement date"
+          value={formatYmdReceipt(inputs.payOnDate)}
+        />
         <Row label="Days elapsed" value={String(outputs.days)} />
         <Row
           label="Interest rate"
           value={`${inputs.ratePercent.toFixed(2)}% ${rateLabel}`}
         />
-        <Row label="" value={`(${formatPercent(outputs.dailyRate, 6)} per day)`} />
-        <Row label="Interest accrued" value={centsToReceiptDisplay(outputs.interestCents)} />
+        <Row
+          label=""
+          value={`(${formatPercent(outputs.dailyRate, 6)} per day)`}
+        />
+        <Row
+          label="Interest accrued"
+          value={centsToReceiptDisplay(outputs.interestCents)}
+        />
         {outputs.outstandingLateFeeCents > 0 ? (
           <Row
             label="Outstanding late fee"
@@ -56,7 +92,142 @@ export function PrintReceipt({ record }: Props) {
       <hr className="border-t border-black my-3" />
 
       <div className="mt-12 text-sm">Signature: ______________________</div>
-    </div>
+    </>
+  );
+}
+
+function ScheduledPaymentReceipt({
+  record,
+}: {
+  record: ScheduledPaymentRecord;
+}) {
+  const { inputs, outputs } = record;
+  const receiptIdShort = record.id.slice(0, 8);
+  const printedAt = formatSgDateTime(new Date(record.timestampUtcIso));
+  const rateLabel = inputs.rateUnit === "annual" ? "per year" : "per month";
+
+  return (
+    <>
+      <div className="text-center mb-6">
+        <div className="text-xl font-bold">{record.companyName || "—"}</div>
+        <div className="text-lg mt-2 tracking-wider">
+          SCHEDULED PAYMENT QUOTATION (Early/On-time)
+        </div>
+      </div>
+
+      <div className="space-y-1 text-sm mb-4">
+        <Row label="Date" value={printedAt} />
+        <Row label="Officer" value={record.officerName || "—"} />
+        <Row label="Borrower ref" value={inputs.borrowerRef || "—"} />
+        <Row label="Receipt ID" value={receiptIdShort} />
+      </div>
+
+      <hr className="border-t border-black my-3" />
+
+      <div className="space-y-1 text-sm">
+        <Row
+          label="Original loan principal"
+          value={centsToReceiptDisplay(inputs.originalPrincipalCents)}
+        />
+        <Row label="Total instalments" value={String(inputs.totalInstalments)} />
+        <Row
+          label="Instalments already paid"
+          value={String(inputs.instalmentsAlreadyPaid)}
+        />
+        <Row
+          label="Outstanding principal"
+          value={centsToReceiptDisplay(inputs.outstandingCents)}
+        />
+        <Row
+          label="Last payment date"
+          value={formatYmdReceipt(inputs.lastPaymentDate)}
+        />
+        <Row
+          label="Pay-on date (today)"
+          value={formatYmdReceipt(inputs.payOnDate)}
+        />
+        <Row
+          label="Interest rate"
+          value={`${inputs.ratePercent.toFixed(2)}% ${rateLabel}`}
+        />
+        <Row
+          label=""
+          value={`(${formatPercent(outputs.dailyRate, 6)} per day)`}
+        />
+        <Row label="Days since last payment" value={String(outputs.days)} />
+      </div>
+
+      <hr className="border-t border-black my-3" />
+
+      <div className="space-y-1 text-sm">
+        <Row
+          label="Principal portion"
+          value={centsToReceiptDisplay(outputs.principalPortionCents)}
+        />
+        <Row
+          label="Interest portion"
+          value={centsToReceiptDisplay(outputs.interestPortionCents)}
+        />
+      </div>
+
+      <hr className="border-t border-black my-3" />
+
+      <div className="flex justify-between items-baseline text-base font-bold">
+        <span>TODAY'S AMOUNT:</span>
+        <span>{centsToReceiptDisplay(outputs.todayAmountCents)}</span>
+      </div>
+
+      <hr className="border-t border-black my-3" />
+
+      <div className="space-y-1 text-sm">
+        <Row
+          label="Outstanding after this payment"
+          value={centsToReceiptDisplay(outputs.newOutstandingCents)}
+        />
+      </div>
+
+      {outputs.remainingSchedule.length > 0 ? (
+        <>
+          <div className="mt-4 mb-2 text-sm font-semibold">
+            REMAINING SCHEDULE
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-t border-b border-black">
+                <th className="text-left py-1">Due</th>
+                <th className="text-right py-1">Principal</th>
+                <th className="text-right py-1">Interest</th>
+                <th className="text-right py-1">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {outputs.remainingSchedule.map((r) => (
+                <tr key={r.rowNumber}>
+                  <td className="py-1 font-mono">{formatYmdReceipt(r.dueDate)}</td>
+                  <td className="py-1 text-right font-mono">
+                    {centsToReceiptDisplay(r.principalCents)}
+                  </td>
+                  <td className="py-1 text-right font-mono">
+                    {centsToReceiptDisplay(r.interestCents)}
+                  </td>
+                  <td className="py-1 text-right font-mono font-semibold">
+                    {centsToReceiptDisplay(r.totalCents)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <p className="mt-3 text-xs italic">
+            Note: Schedule recalculated based on actual payment date.
+          </p>
+        </>
+      ) : null}
+
+      <hr className="border-t border-black my-3" />
+
+      <div className="mt-12 text-sm">Signature: ______________________</div>
+    </>
   );
 }
 
