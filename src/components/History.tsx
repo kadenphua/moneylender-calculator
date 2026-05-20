@@ -280,7 +280,12 @@ function ScheduledPaymentDetail({
       />
       <DetailRow
         label="Last payment"
-        value={formatYmdShort(inputs.lastPaymentDate)}
+        value={
+          formatYmdShort(inputs.lastPaymentDate) +
+          (inputs.lastPaymentDate === inputs.loanStartDate
+            ? " (= loan start date)"
+            : "")
+        }
       />
       <DetailRow
         label="Pay-on date"
