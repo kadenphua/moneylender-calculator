@@ -71,7 +71,11 @@ export const scheduledPaymentFormSchema = z
         .positive("Must be greater than 0")
         .lt(1000, "Must be less than 1000"),
     ),
-    lastPaymentDate: ymd,
+    // lastPaymentDate is conditionally required: optional when
+    // instalmentsAlreadyPaid === 0 (the UI hides the field and the submit
+    // handler substitutes loanStartDate), required when >= 1. superRefine
+    // below enforces both branches.
+    lastPaymentDate: z.string(),
     payOnDate: ymd,
     monthlyPaymentDollars: requiredNumber().pipe(
       z.number().positive("Must be greater than 0"),
@@ -81,13 +85,50 @@ export const scheduledPaymentFormSchema = z
     message: "Must be less than total instalments",
     path: ["instalmentsAlreadyPaid"],
   })
-  .refine((d) => d.lastPaymentDate >= d.loanStartDate, {
-    message: "Last payment date cannot be before loan start date.",
-    path: ["lastPaymentDate"],
-  })
-  .refine((d) => d.payOnDate >= d.lastPaymentDate, {
-    message: "Pay-on date must be on or after last payment date",
-    path: ["payOnDate"],
+  .superRefine((d, ctx) => {
+    if (typeof d.instalmentsAlreadyPaid !== "number") return;
+    if (d.instalmentsAlreadyPaid >= 1) {
+      if (!d.lastPaymentDate) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Required",
+          path: ["lastPaymentDate"],
+        });
+        return;
+      }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d.lastPaymentDate)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Invalid date",
+          path: ["lastPaymentDate"],
+        });
+        return;
+      }
+      if (d.lastPaymentDate < d.loanStartDate) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Last payment date cannot be before loan start date.",
+          path: ["lastPaymentDate"],
+        });
+      }
+      if (d.payOnDate < d.lastPaymentDate) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Pay-on date must be on or after last payment date",
+          path: ["payOnDate"],
+        });
+      }
+    } else {
+      // paid === 0: lastPaymentDate is hidden; the submit handler
+      // substitutes loanStartDate, so validate payOnDate against that.
+      if (d.payOnDate < d.loanStartDate) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Pay-on date must be on or after loan start date",
+          path: ["payOnDate"],
+        });
+      }
+    }
   });
 
 export type ScheduledPaymentFormValues = z.input<typeof scheduledPaymentFormSchema>;

@@ -1,171 +1,125 @@
-Improve Mode B form ergonomics in one commit. UI-only — no math
-changes, no test changes (engine tests must still pass).
+TWO BUGS TO FIX IN MODE B FORM
 
-CHANGES (all in the Mode B form)
+BUG 1: Calculate button stays disabled with valid inputs
 
-1. HIDE "Last payment date" WHEN INSTALMENTS PAID = 0
+When instalmentsAlreadyPaid === 0, the "Last payment date" field
+is correctly hidden, but the Calculate button remains disabled
+even when all other fields are filled correctly.
 
-   When instalmentsAlreadyPaid === 0, hide the "Last payment date"
-   field. Internally use loanStartDate as the lastPaymentDate when
-   submitting.
+DIAGNOSIS
 
-   When instalmentsAlreadyPaid >= 1, show the field as today;
-   required.
+The likely cause: the zod schema still validates lastPaymentDate
+as required, but the UI hides the field. Form-level validation
+fails silently (no visible error message because no field is
+rendered to show it against), and react-hook-form keeps the
+Calculate button disabled.
 
-   Below the "Instalments already paid" field, when its value is 0,
-   show inline note (small, muted):
-     "First payment for this loan — interest calculated from the
-      loan start date."
+FIX
 
-   If officer toggles between 0 and >=1 values, react-hook-form
-   should preserve any value they previously typed in the
-   last-payment-date field so it isn't lost.
+Update src/lib/schema.ts so that when instalmentsAlreadyPaid === 0:
+- lastPaymentDate is OPTIONAL (zod superRefine, not required)
+- The form's submit handler is the place that substitutes
+  loanStartDate for lastPaymentDate when paid=0
 
-2. REMEMBER RATE AND RATE UNIT BETWEEN SESSIONS
+When instalmentsAlreadyPaid >= 1:
+- lastPaymentDate is REQUIRED as before
+- The refinement `lastPaymentDate >= loanStartDate` still applies
 
-   On form submit, save ratePercent and rateUnit to localStorage:
-     keys: lastUsedRatePercent, lastUsedRateUnit
-   On form mount, pre-fill from these if present.
-   Defaults if no localStorage value: ratePercent blank, rateUnit
-   'monthly'.
+Make sure react-hook-form's `mode: 'onChange'` is set (or
+'onBlur') so the form re-validates immediately when
+instalmentsAlreadyPaid changes from blank to 0 to a positive
+integer. This way the button enables/disables responsively.
 
-   Beside the rate field when it's pre-filled from localStorage,
-   show a tiny muted label: "(remembered)" — so the officer
-   notices and can change if needed.
+After the fix, verify in the dev server:
+- Set paid=0, fill all other fields, button should be ACTIVE.
+- Set paid=2, leave lastPaymentDate blank, button should be
+  DISABLED with a visible "Required" error on the
+  lastPaymentDate field.
+- Set paid=2, fill lastPaymentDate, button should be ACTIVE.
 
-3. SCHEDULE-DERIVED OUTSTANDING CROSS-REFERENCE
+BUG 2: Outstanding field is editable and shows redundant hint
+when paid = 0
 
-   When the officer has filled in:
-     originalPrincipal, totalInstalments, instalmentsAlreadyPaid,
-     ratePercent, rateUnit, monthlyPayment
-   ...compute the schedule-derived outstanding by amortising
-   instalmentsAlreadyPaid rows forward from originalPrincipal
-   using the per-row amortisation math from calc.ts.
+When instalmentsAlreadyPaid === 0, the borrower has by definition
+made no payments, so the current outstanding always equals the
+loan amount. The officer typing the same number in twice is
+busywork, and the "Schedule says: $5,000.00" hint is redundant.
 
-   Show this value as a hint under the "Outstanding principal"
-   input:
-     "Schedule says: $X,XXX.XX. If your CRM shows a different
-      number, use the CRM value."
+FIX
 
-   This hint does NOT auto-fill the outstanding field. The
-   officer types the real outstanding from the CRM. The hint is
-   purely a sanity check.
+In src/components/ModeBScheduledPayment.tsx, when
+instalmentsAlreadyPaid === 0:
+- The "Current outstanding ($)" input becomes READ-ONLY
+- Its value is auto-set to whatever loan amount is currently
+  entered, watched reactively (if loan amount changes from
+  $5,000 to $6,000, the outstanding field auto-updates to $6,000)
+- The cross-reference hint ("Schedule says: ...") is HIDDEN
+- Style the field with the same disabled/read-only appearance as
+  the monthly payment field has when read-only
 
-   If the typed outstanding differs from the schedule-derived
-   value by more than $1.00, change the hint text color to amber
-   (muted warning, not red). This is a soft signal, not an error.
+When instalmentsAlreadyPaid >= 1:
+- The field is editable as today
+- The cross-reference hint reappears
 
-   If any of the prerequisite fields are blank, hide the hint
-   entirely.
+Add a small visual cue when the field is auto-set: muted text
+below the field saying "Auto-filled — no payments made yet."
 
-4. TAB ORDER
+VERIFY VALIDATION SCHEMA IS CONSISTENT WITH THIS BEHAVIOUR
 
-   Set tabIndex on every input in Mode B so the officer can tab
-   through in the natural top-to-bottom order:
-     borrowerRef → originalPrincipal → loanStartDate →
-     totalInstalments → instalmentsAlreadyPaid →
-     outstandingPrincipal → ratePercent → rateUnit →
-     monthlyPayment → lastPaymentDate (if visible) → payOnDate →
-     Calculate button.
-
-   The radio/segment toggle for rateUnit should be reachable by
-   tab + arrow keys.
-
-   Verify by tabbing through the form on the dev server — it
-   should hit every field in order with no detours into header
-   or unrelated elements.
-
-5. CURRENCY FORMATTING ON DOLLAR FIELDS
-
-   For the four dollar-amount fields:
-     originalPrincipal, outstandingPrincipal, monthlyPayment
-   ...apply a thousands-separator + 2-decimal formatter on blur.
-
-   Behaviour:
-     - Officer types "1000" → on blur, field shows "1,000.00"
-     - Officer types "1000.5" → on blur, field shows "1,000.50"
-     - On focus, the formatter strips back to raw number for easy
-       editing
-     - Internally the value is still a number, not a formatted
-       string — react-hook-form's value is numeric
-
-   Use a small custom formatter, not a library. No new dependencies.
-
-6. BETTER LABELS
-
-   Rename in Mode B only:
-     "Original loan principal" → "Loan amount"
-     "Outstanding principal" → "Current outstanding"
-     "Instalments already paid" → "Instalments paid so far"
-     "Pay-on date" → "Today's date (or future date if quoting)"
-     "Monthly payment amount" → "Monthly payment (from CRM)"
-
-   Mode A labels unchanged.
-
-NO CHANGES TO
-
-- src/lib/calc.ts (math unchanged)
-- src/lib/calc.test.ts (tests unchanged)
-- Mode A form
-- Print receipt structure
-- IndexedDB schema
-- Schedule comparison component
-
-PERSISTED RECORD
-
-After form submission, the stored CalculationRecord MUST still
-include a valid lastPaymentDate (set to loanStartDate when
-instalmentsAlreadyPaid === 0). This keeps the audit log complete
-and consistent.
-
-In History.tsx detail dialog for Mode B records, show
-lastPaymentDate as today, but if it equals loanStartDate, append
-"(= loan start date)" to the displayed value.
+If the schema validates that outstanding > 0 and <= loan amount,
+that should still pass when outstanding === loan amount (since
+loan amount is required to be > 0).
 
 STEPS
 
-1. Update src/components/ModeBScheduledPayment.tsx with all six
-   changes.
+1. Update src/lib/schema.ts:
+   - lastPaymentDate conditional via superRefine on
+     instalmentsAlreadyPaid
+   - existing refinements stay intact
 
-2. Update src/components/History.tsx for the lastPaymentDate
-   annotation.
+2. Update src/components/ModeBScheduledPayment.tsx:
+   - Add watched value for instalmentsAlreadyPaid
+   - When 0, make outstanding read-only and auto-track loan amount
+   - When 0, hide the cross-reference hint
+   - When >=1, make outstanding editable and show hint as today
+   - Add the "Auto-filled — no payments made yet." muted text
 
-3. Run pnpm test — all 14 tests still pass.
+3. Run pnpm test — all 14 tests must still pass.
 
 4. Run pnpm build — clean.
 
-5. Manual checks (note these are for the user, you don't run them):
-   - With instalmentsPaid=0, last-payment-date is hidden, inline
-     note is visible.
-   - With instalmentsPaid=2, last-payment-date is visible.
-   - Toggling instalmentsPaid between 0 and 2 preserves any
-     date the officer typed.
-   - After submitting a calculation, refreshing the page, the
-     rate field is pre-filled with "(remembered)" annotation.
-   - With all other fields filled, the outstanding field shows
-     "Schedule says: $X.XX" hint.
-   - Tabbing through the form hits every field in correct order.
-   - Typing 1000 in the principal field and tabbing away shows
-     "$1,000.00".
+5. Verify in dev server:
+   a. paid=0 + all other fields → Calculate button ACTIVE
+   b. paid=2 + lastPaymentDate empty → button DISABLED, visible
+      error on lastPaymentDate
+   c. paid=2 + lastPaymentDate filled → button ACTIVE
+   d. Setting outstanding while paid=0 should be impossible (field
+      is read-only)
+   e. Changing loan amount while paid=0 should auto-update
+      outstanding
 
 6. Commit with message:
-   "ui: streamline Mode B form (hide unused fields, remember
-    rate, cross-reference outstanding, tab order, formatting,
-    labels)"
+   "fix(ui): enable Calculate when paid=0; auto-fill outstanding
+    for new loans"
 
 7. Push to GitHub for Vercel auto-deploy.
 
+ALSO — DOUBLE-CHECK FOR OTHER FORM VALIDATION BUGS
+
+While in the schema and form code, look for any other field that
+might be silently failing validation:
+- Loan start date format
+- Today's date / pay-on date defaults
+- Rate field handling 0% or empty
+- Monthly payment field handling
+
+Report anything you find that looks suspicious. If you spot a bug
+that wasn't asked for, flag it and ask before fixing — don't
+spontaneously change behaviour.
+
 STOPPING POINT
 
-Report after pushing. Include:
-- Commit hash
-- Any silent default resolved (e.g., what counts as "more than
-  $1.00" for the warning color)
-- Anything in the spec that was ambiguous
-
-DO NOT TOUCH
-
-- Mode A
-- Anything related to calc.ts or tests
-- Schedule comparison or print receipt
-- DB schema
+Report after the commit and push. Include:
+- The commit hash
+- A list of test scenarios verified
+- Any other validation issue you noticed

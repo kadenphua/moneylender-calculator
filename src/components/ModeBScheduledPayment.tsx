@@ -93,10 +93,11 @@ export function ModeBScheduledPayment({
     control,
     watch,
     setValue,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isValid },
   } = useForm<ScheduledPaymentFormValues, unknown, ScheduledPaymentFormParsed>({
     resolver: zodResolver(scheduledPaymentFormSchema),
     defaultValues: defaultMobBValues(initialRateRef.current),
+    mode: "onChange",
   });
 
   const watchedInstalmentsPaid = watch("instalmentsAlreadyPaid");
@@ -112,22 +113,40 @@ export function ModeBScheduledPayment({
 
   // When the officer marks this as the first payment, mirror loanStartDate
   // into lastPaymentDate so submission has a valid value. When they switch
-  // back to >=1, restore the date they had previously typed (if any).
+  // back to >=1, restore the date they had previously typed (if any). We
+  // re-trigger validation so the Calculate button updates immediately.
   useEffect(() => {
     if (isFirstPayment) {
       if (watchedLoanStart) {
         setValue("lastPaymentDate", watchedLoanStart, {
-          shouldValidate: false,
+          shouldValidate: true,
           shouldDirty: false,
         });
       }
     } else {
       setValue("lastPaymentDate", storedLastPaymentDate, {
-        shouldValidate: false,
+        shouldValidate: true,
         shouldDirty: false,
       });
     }
   }, [isFirstPayment, watchedLoanStart, storedLastPaymentDate, setValue]);
+
+  // When this is the first payment, the outstanding always equals the loan
+  // amount — auto-track it so the officer doesn't have to type it twice.
+  // When they switch back to paid>=1, leave whatever value is there so the
+  // officer can edit (we don't want to nuke a previously-typed outstanding).
+  useEffect(() => {
+    if (!isFirstPayment) return;
+    if (
+      typeof watchedOriginal === "number" &&
+      Number.isFinite(watchedOriginal)
+    ) {
+      setValue("outstandingDollars", watchedOriginal, {
+        shouldValidate: true,
+        shouldDirty: false,
+      });
+    }
+  }, [isFirstPayment, watchedOriginal, setValue]);
 
   // Schedule-derived outstanding hint: amortise instalmentsAlreadyPaid rows
   // forward and read the post-row outstanding. Hidden when any prereq is
@@ -412,20 +431,36 @@ export function ModeBScheduledPayment({
               htmlFor="b-outstandingDollars"
               error={errors.outstandingDollars?.message}
             >
-              <Controller
-                control={control}
-                name="outstandingDollars"
-                render={({ field }) => (
-                  <CurrencyInput
-                    id="b-outstandingDollars"
-                    tabIndex={TAB.outstandingPrincipal}
-                    value={field.value}
-                    onChange={field.onChange}
-                    onBlur={field.onBlur}
-                  />
-                )}
-              />
-              {scheduleDerivedHint ? (
+              {isFirstPayment ? (
+                <ReadOnlyAmountDisplay
+                  id="b-outstandingDollars"
+                  value={
+                    typeof watchedOriginal === "number" &&
+                    Number.isFinite(watchedOriginal)
+                      ? watchedOriginal
+                      : undefined
+                  }
+                />
+              ) : (
+                <Controller
+                  control={control}
+                  name="outstandingDollars"
+                  render={({ field }) => (
+                    <CurrencyInput
+                      id="b-outstandingDollars"
+                      tabIndex={TAB.outstandingPrincipal}
+                      value={field.value}
+                      onChange={field.onChange}
+                      onBlur={field.onBlur}
+                    />
+                  )}
+                />
+              )}
+              {isFirstPayment ? (
+                <p className="text-xs text-muted-foreground">
+                  Auto-filled — no payments made yet.
+                </p>
+              ) : scheduleDerivedHint ? (
                 <p
                   className={
                     "text-xs " +
@@ -546,7 +581,7 @@ export function ModeBScheduledPayment({
 
             <Button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || !isValid}
               tabIndex={TAB.calculate}
               className="w-full h-12 text-base font-semibold"
             >
@@ -635,6 +670,24 @@ function formatCurrency(v: number | undefined | null): string {
 function coerceToNumber(v: unknown): number | undefined {
   if (typeof v === "number" && Number.isFinite(v)) return v;
   return undefined;
+}
+
+function ReadOnlyAmountDisplay(props: {
+  id: string;
+  value: number | undefined;
+}) {
+  return (
+    <div
+      id={props.id}
+      role="textbox"
+      aria-readonly="true"
+      className="flex h-9 w-full items-center rounded-md border border-input bg-muted px-3 py-1 text-sm text-muted-foreground"
+    >
+      <span className="font-mono">
+        {props.value !== undefined ? `$${formatCurrency(props.value)}` : "—"}
+      </span>
+    </div>
+  );
 }
 
 function CurrencyInput(props: {
