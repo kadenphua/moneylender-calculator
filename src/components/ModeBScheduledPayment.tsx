@@ -312,7 +312,7 @@ export function ModeBScheduledPayment({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Field
-                label="Last payment date"
+                label="Last payment date (or loan start date if no payments made yet)"
                 htmlFor="b-lastPaymentDate"
                 error={errors.lastPaymentDate?.message}
               >

@@ -65,8 +65,12 @@ No officer action required.
     interest accrued, late fee (if any), large TOTAL TO PAY.
   - **Scheduled Payment / Early (Mode B):** borrower ref, original loan
     principal, total instalments, instalments already paid, outstanding
-    principal as of last payment, rate + unit, last payment date, pay-on
-    date, principal portion per instalment. The principal-portion field
+    principal as of last payment, rate + unit, **last payment date (or the
+    loan start date if no payments have been made yet)**, pay-on date,
+    principal portion per instalment. For a brand-new loan with
+    `instalmentsAlreadyPaid = 0`, put the disbursement / loan start date
+    in the "last payment date" field — mathematically that's the correct
+    anchor for interest to accrue from. The principal-portion field
     auto-fills from `original / total` and shows a `(auto: $X.XX —
     change if rounding differs)` hint; the officer can override. Result
     shows today's principal + interest + TODAY'S AMOUNT, new outstanding,

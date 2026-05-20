@@ -139,7 +139,7 @@ function ScheduledPaymentReceipt({
           value={centsToReceiptDisplay(inputs.outstandingCents)}
         />
         <Row
-          label="Last payment date"
+          label="Last payment date (or loan start date if no payments made yet)"
           value={formatYmdReceipt(inputs.lastPaymentDate)}
         />
         <Row
