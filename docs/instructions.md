@@ -1,144 +1,97 @@
-Another spec gap. Add a loan start date field to Mode B.
+Generate an edge-case scenario report for the calculator.
 
-1. Add a new field "Loan start date" to the Mode B form, placed
-   between "Original loan principal" and "Total number of
-   instalments". Date picker, required.
+Goal: surface scenarios that the existing 14 acceptance tests do
+not cover, where the calculator might silently produce wrong or
+unexpected results. Do NOT modify calc.ts. Do NOT add to the
+test suite. This is a one-off diagnostic report, not a feature.
 
-2. Add the field to the Mode B zod schema as loanStartDate (YYYY-MM-DD
-   string, same format as other dates).
+Create a new file: docs/edge-case-report.md
 
-3. Add the field to the ScheduledPaymentInput type and to
-   ScheduledPaymentRecord in db.ts.
+For each scenario below, compute the result by directly calling
+calculateFullSettlement or calculateScheduledPayment from a small
+TypeScript script (place it in scripts/edge-cases.ts and run it
+once with `pnpm tsx scripts/edge-cases.ts` — install tsx if needed
+as a dev dep). Capture all inputs and the full result. Render
+into the markdown file as a series of sections, one per scenario,
+with:
+  - Scenario description
+  - Inputs
+  - Expected behaviour (what a sensible result would look like —
+    your honest read, not a hard assertion)
+  - Actual output (key fields)
+  - Flag any result that looks suspicious, surprising, or wrong
 
-4. Validation: loanStartDate <= lastPaymentDate. If violated, form
-   error: "Last payment date cannot be before loan start date."
+Scenarios to run:
 
-5. Pass loanStartDate through to the calculation function for
-   storage in the result, even though it doesn't affect the math.
-   The math itself doesn't change — interest still calculates from
-   lastPaymentDate to payOnDate.
+A. END-OF-MONTH BEHAVIOUR
+   A1. Mode B: loan start 2026-01-31, last payment 2026-01-31,
+       pay-on 2026-02-28 (a "one month later" payment where Feb has
+       no 31st). Verify the next due date in the output. Note any
+       day-drift in the schedule.
+   A2. Mode B: loan start 2026-01-31, 6 instalments. Generate the
+       original schedule. Note where each due date lands — confirm
+       date-fns clamping behaviour and whether the schedule drifts
+       forward after Feb.
 
-6. On the Mode B receipt, add a line in the loan summary block:
-       Loan start date:                   01 Jan 2026
-   placed immediately above the existing "Total instalments" line.
+B. LEAP YEAR
+   B1. Mode A: outstanding $1,000, last payment 2028-02-15, pay-on
+       2028-03-15 (crosses leap day). Verify days = 29.
+   B2. Mode B: loan start 2028-01-01, 6 instalments. Check whether
+       the Feb-Mar period in the original schedule has 29 days.
 
-7. Update the Mode B detail dialog in History.tsx to show the loan
-   start date.
+C. EXTREME LOAN SIZES
+   C1. Mode A: outstanding $0.01 (1 cent), rate 48% per year, 100
+       days. Confirm interest rounds sensibly, total >= principal.
+   C2. Mode A: outstanding $1,000,000 (1 million), rate 48% per
+       year, 30 days. Confirm no floating-point precision issues
+       (interest should be a clean integer cents value).
+   C3. Mode B: original principal $100,000, 24 instalments. Confirm
+       original schedule generates without error.
 
-8. Update README's Mode B section to list the loan start date as a
-   required input.
+D. EXTREME INSTALMENT COUNTS
+   D1. Mode B: 1 total instalment, 0 already paid. Does the form
+       accept this? What does the schedule look like? Single row
+       only, paid on the spot.
+   D2. Mode B: 24 instalments. Schedule should have 24 rows; last
+       row outstandingAfter = 0.
 
-9. Add one new test:
-   TEST 13 — Validation: lastPaymentDate before loanStartDate throws
-   a clear error.
+E. ROUNDING EDGE CASES
+   E1. Mode B: $1,000 / 7 instalments. Principal portion = $142.857...
+       which rounds to $142.86. 7 × 142.86 = $1,000.02 — over by
+       2 cents. Verify the last row absorbs the -2 cent remainder
+       so the loan still closes at exactly $0.
+   E2. Mode B: $999.99 / 3 instalments. Awkward division. Confirm
+       sums.
 
-   So total tests = 13.
+F. ZERO-OR-NEAR-ZERO EDGE CASES
+   F1. Mode A: outstanding $1,000, last payment = pay-on (same day).
+       Days = 0, interest = 0, total = $1,000.
+   F2. Mode B: outstanding equals principal portion (i.e. this is
+       the last instalment). After today, outstanding = 0. Should
+       remainingSchedule be empty? Confirm.
 
-10. Existing tests (1-12) must continue to pass. Add loanStartDate
-    to the Mode B test inputs in TEST 8, 9, 10, 11, 12 — use the
-    same value as lastPaymentDate would have been BEFORE the first
-    payment, or any sensible value earlier than lastPaymentDate.
+G. RATE BOUNDARIES
+   G1. Mode A: rate = 0.01% per year. Very low rate. Confirm
+       interest computes without underflow.
+   G2. Mode A: rate = 999% per year (just under the validation
+       ceiling of 1000). Confirm large interest computes without
+       overflow.
 
-Add the original repayment schedule to the Mode B output.
+H. EARLY-PAYMENT EXTREMES IN MODE B
+   H1. Loan start 2026-01-01, last payment 2026-01-01, pay-on
+       2026-01-02 (1 day after loan start, 30 days early). Days = 1.
+       Interest tiny. Officer pays "first instalment" essentially
+       on the spot. Sensible?
+   H2. Loan start 2026-01-01, last payment 2026-01-01, pay-on
+       2026-01-31 (one day before the natural due date of 2026-02-01).
+       Days = 30, just under a month. Should be accepted.
 
-1. New helper function in calc.ts:
-   generateOriginalSchedule(
-     originalPrincipalCents: number,
-     totalInstalments: number,
-     principalPortionCents: number,
-     monthlyRatePercent: number,
-     loanStartDate: Date
-   ): ScheduleRow[]
+For each scenario, after computing the result, write a one-line
+verdict in the report: "OK — behaves as expected" or "FLAG —
+[describe the surprise]".
 
-   Algorithm:
-     For each row i from 1 to totalInstalments:
-       dueDate = addMonths(loanStartDate, i)
-       outstandingAtStartCents = originalPrincipalCents − (i-1) × principalPortionCents
-       interestCents = roundHalfUp(outstandingAtStartCents × monthlyRatePercent / 100)
-       principalCents = principalPortionCents (last row absorbs remainder so loan
-                         closes exactly at zero)
-       totalCents = principalCents + interestCents
-       outstandingAfterRowCents = outstandingAtStartCents - principalCents
+End the report with a "Summary" section listing only the FLAG
+entries, so I can scan it in 30 seconds.
 
-   This uses MONTHLY rate × outstanding, NOT daily rate × actual days. 
-   The original schedule assumes exactly one month per period.
-
-2. Add originalSchedule: ScheduleRow[] to ScheduledPaymentResult.
-
-3. Add originalSchedule to ScheduledPaymentRecord in db.ts.
-
-4. On the screen Mode B result panel, render TWO tables:
-   - "Original Schedule (from loan agreement)" — shows all instalments,
-     with paid ones marked ✓, the one being paid today marked "← paying
-     today", and future ones unmarked.
-   - "New Remaining Schedule (recalculated)" — shows only the remaining
-     future instalments after today's payment.
-
-5. On the printed receipt for Mode B, render both tables stacked
-   vertically. Same status markers (✓ paid, ← paid today). 4 columns
-   each: Due / Principal / Interest / Total.
-
-6. Update History.tsx detail dialog to show both schedules.
-
-7. Add one new test:
-   TEST 14 — generateOriginalSchedule for $6,000 / 6 instalments / 4%
-   monthly produces the canonical schedule:
-     Row 1: principal $1,000, interest $240.00, total $1,240.00
-     Row 2: principal $1,000, interest $200.00, total $1,200.00
-     Row 3: principal $1,000, interest $160.00, total $1,160.00
-     Row 4: principal $1,000, interest $120.00, total $1,120.00
-     Row 5: principal $1,000, interest  $80.00, total $1,080.00
-     Row 6: principal $1,000, interest  $40.00, total $1,040.00
-     Sum of all principals = $6,000.00 exactly.
-
-   Total tests now = 14.
-
-8. Update README:
-   - Note that Mode B output includes both schedules.
-   - Add a warning under "Before deploying to the team": "Also verify
-     that the calculator's Original Schedule for one real borrower
-     matches the schedule on their Note of Contract to the cent. If
-     they differ, the Note of Contract is generated with a different
-     convention and the schedule generator needs investigation before
-     deploying."
-
-Update the Mode B layout to show the Original Schedule and New
-Remaining Schedule side-by-side instead of stacked.
-
-1. On screen (Mode B result panel and History detail dialog):
-   - Two tables side-by-side at viewport widths ≥ 768px.
-   - Stack vertically below 768px.
-   - Use CSS grid or flex with a small gap between them.
-   - Each table 3 columns: Due / Interest / Total. Drop the Principal
-     column since principal is constant for all rows under Split A.
-   - Left table header: "ORIGINAL SCHEDULE (from loan agreement)"
-   - Right table header: "NEW REMAINING SCHEDULE (recalculated)"
-   - Use the same row markers as before: ✓ paid for past rows,
-     "← paying today" for today's row.
-   - Past rows in the new-schedule table appear as empty/dim rows
-     aligned with the original (so the rows line up visually).
-     If aligning is awkward, just show only the future rows in the
-     new schedule — whichever is cleaner.
-
-2. On the printed receipt:
-   - Same side-by-side layout if @media print width allows.
-   - Add `@page { size: A4 landscape; }` in print CSS so receipts
-     print in landscape by default — gives more horizontal room.
-   - If the side-by-side layout still doesn't fit, fall back to
-     stacked with clear "BEFORE" / "AFTER" headings.
-
-3. Below both tables, add a summary line:
-       Total saving across remaining schedule: S$80.82
-   Compute as: 
-       sum of original schedule totals for remaining future rows
-       MINUS sum of new schedule totals
-   Show only if this is positive (early payment with saving). If
-   zero (on-time payment), hide the line.
-
-4. Update README's Mode B section to mention the comparison view
-   and the savings summary.
-
-5. No new tests required — the underlying calculations are unchanged.
-   Just rendering.
-
-Continue the build.
+Do NOT change any production code based on what you find. Just
+report. We decide what to fix after reading the report.
