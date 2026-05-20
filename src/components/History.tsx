@@ -265,10 +265,18 @@ function ScheduledPaymentDetail({
         value={centsToDisplay(inputs.outstandingCents)}
       />
       <DetailRow
+        label="Monthly payment"
+        value={centsToDisplay(inputs.monthlyPaymentCents)}
+      />
+      <DetailRow
         label="Interest rate"
         value={`${inputs.ratePercent}% ${
           inputs.rateUnit === "annual" ? "per year" : "per month"
         }`}
+      />
+      <DetailRow
+        label="Monthly rate (derived)"
+        value={`${outputs.monthlyRatePercent.toFixed(4)}%`}
       />
       <DetailRow
         label="Last payment"
@@ -279,18 +287,25 @@ function ScheduledPaymentDetail({
         value={formatYmdShort(inputs.payOnDate)}
       />
       <Separator />
-      <DetailRow label="Days" value={String(outputs.days)} />
       <DetailRow
-        label="Daily rate"
-        value={formatPercent(outputs.dailyRate, 6)}
+        label="Days since last payment"
+        value={`${outputs.days} of ${outputs.daysInScheduledMonth}`}
+      />
+      <DetailRow
+        label="Scheduled monthly interest"
+        value={centsToDisplay(outputs.scheduledInterestCents)}
+      />
+      <DetailRow
+        label="Proration factor"
+        value={`${outputs.daysInScheduledMonth > 0 ? `${outputs.days}/${outputs.daysInScheduledMonth} = ` : ""}${(outputs.prorationFactor * 100).toFixed(2)}%`}
+      />
+      <DetailRow
+        label="Prorated interest (today)"
+        value={centsToDisplay(outputs.interestPortionCents)}
       />
       <DetailRow
         label="Principal portion"
         value={centsToDisplay(outputs.principalPortionCents)}
-      />
-      <DetailRow
-        label="Interest portion"
-        value={centsToDisplay(outputs.interestPortionCents)}
       />
       <Separator />
       <div className="flex justify-between items-baseline pt-2">

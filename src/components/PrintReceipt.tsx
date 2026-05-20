@@ -144,6 +144,10 @@ function ScheduledPaymentReceipt({
           value={centsToReceiptDisplay(inputs.outstandingCents)}
         />
         <Row
+          label="Monthly payment amount"
+          value={centsToReceiptDisplay(inputs.monthlyPaymentCents)}
+        />
+        <Row
           label="Last payment date (or loan start date if no payments made yet)"
           value={formatYmdReceipt(inputs.lastPaymentDate)}
         />
@@ -157,21 +161,32 @@ function ScheduledPaymentReceipt({
         />
         <Row
           label=""
-          value={`(${formatPercent(outputs.dailyRate, 6)} per day)`}
+          value={`(${outputs.monthlyRatePercent.toFixed(4)}% per month)`}
         />
-        <Row label="Days since last payment" value={String(outputs.days)} />
       </div>
 
       <hr className="border-t border-black my-3" />
 
       <div className="space-y-1 text-sm">
         <Row
-          label="Principal portion"
-          value={centsToReceiptDisplay(outputs.principalPortionCents)}
+          label="Days since last payment"
+          value={`${outputs.days} of ${outputs.daysInScheduledMonth}`}
         />
         <Row
-          label="Interest portion"
+          label="Scheduled monthly interest"
+          value={centsToReceiptDisplay(outputs.scheduledInterestCents)}
+        />
+        <Row
+          label="Proration factor"
+          value={`${outputs.daysInScheduledMonth > 0 ? `${outputs.days}/${outputs.daysInScheduledMonth} = ` : ""}${(outputs.prorationFactor * 100).toFixed(2)}%`}
+        />
+        <Row
+          label="Prorated interest (today)"
           value={centsToReceiptDisplay(outputs.interestPortionCents)}
+        />
+        <Row
+          label="Principal portion"
+          value={centsToReceiptDisplay(outputs.principalPortionCents)}
         />
       </div>
 

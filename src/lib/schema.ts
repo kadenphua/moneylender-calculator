@@ -73,7 +73,7 @@ export const scheduledPaymentFormSchema = z
     ),
     lastPaymentDate: ymd,
     payOnDate: ymd,
-    principalPortionDollars: requiredNumber().pipe(
+    monthlyPaymentDollars: requiredNumber().pipe(
       z.number().positive("Must be greater than 0"),
     ),
   })
@@ -88,14 +88,7 @@ export const scheduledPaymentFormSchema = z
   .refine((d) => d.payOnDate >= d.lastPaymentDate, {
     message: "Pay-on date must be on or after last payment date",
     path: ["payOnDate"],
-  })
-  .refine(
-    (d) => d.principalPortionDollars <= d.outstandingDollars,
-    {
-      message: "Principal portion cannot exceed outstanding principal",
-      path: ["principalPortionDollars"],
-    },
-  );
+  });
 
 export type ScheduledPaymentFormValues = z.input<typeof scheduledPaymentFormSchema>;
 export type ScheduledPaymentFormParsed = z.output<typeof scheduledPaymentFormSchema>;

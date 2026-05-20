@@ -13,7 +13,6 @@ import { format } from "date-fns";
 
 import {
   AllInstalmentsPaidError,
-  autoPrincipalPortionCents,
   calculateFullSettlement,
   calculateScheduledPayment,
   centsToDisplay,
@@ -23,6 +22,22 @@ import {
   type ScheduledPaymentResult,
   type ScheduleRow,
 } from "../src/lib/calc.ts";
+
+/**
+ * Sensible amortised monthly payments per Mode B scenario in this script.
+ * Computed from the standard annuity formula
+ *   p = P × r × (1+r)^n / ((1+r)^n − 1)
+ * and rounded to the nearest cent. Used as monthlyPaymentCents inputs so
+ * each scenario produces a valid amortisation schedule (last row absorbs
+ * any cumulative rounding).
+ */
+const MONTHLY_PAYMENT_6000_6_4PCT = 114449; // $6,000 / 6 / 4%/mo
+const MONTHLY_PAYMENT_24000_24_4PCT = 157432; // $24,000 / 24 / 4%/mo
+const MONTHLY_PAYMENT_100000_24_4PCT = 655966; // $100,000 / 24 / 4%/mo
+const MONTHLY_PAYMENT_1000_7_4PCT = 16661; // $1,000 / 7 / 4%/mo
+const MONTHLY_PAYMENT_999_99_3_4PCT = 36034; // $999.99 / 3 / 4%/mo
+const MONTHLY_PAYMENT_1_INSTALMENT_1000_4PCT = 104000; // $1,000 / 1 / 4%/mo
+const MONTHLY_PAYMENT_LAST_ROW_1000_4PCT = 104000; // for F2 (last instalment, $1,000 outstanding, $40 interest)
 
 const d = (y: number, m: number, day: number) => new Date(y, m - 1, day);
 const ymd = (date: Date) => format(date, "yyyy-MM-dd");
@@ -141,9 +156,9 @@ field("rate", "48% per year");
 field("loanStartDate", "2026-01-31");
 field("lastPaymentDate", "2026-01-31");
 field("payOnDate", "2026-02-28 (the clamped 'one month later')");
-field("principalPortion", "$1,000.00");
+field("monthlyPayment", `${$(MONTHLY_PAYMENT_6000_6_4PCT)} (amortised)`);
 p("");
-p("**Expected behaviour:** Not late (payOn equals todaysScheduledDate = addMonths(Jan 31, 1) = Feb 28). nextDueDate = addMonths(Jan 31, 2) = Mar 31. Original Schedule due dates should alternate 28/31/30/31/30/31 (anchored). New Remaining Schedule chains addMonths(prev, 1) — may drift off the anchored dates from April onward.");
+p("**Expected behaviour:** Not late (payOn equals todaysScheduledDate = addMonths(Jan 31, 1) = Feb 28). nextDueDate = addMonths(Jan 31, 2) = Mar 31. Original Schedule due dates should alternate 28/31/30/31/30/31 (anchored to loanStartDate). The post-anchoring-fix remaining schedule should NOT drift relative to the original.");
 p("");
 const a1 = calculateScheduledPayment({
   originalPrincipalCents: 600000,
@@ -155,7 +170,7 @@ const a1 = calculateScheduledPayment({
   loanStartDate: d(2026, 1, 31),
   lastPaymentDate: d(2026, 1, 31),
   payOnDate: d(2026, 2, 28),
-  principalPortionCents: 100000,
+  monthlyPaymentCents: MONTHLY_PAYMENT_6000_6_4PCT,
 });
 p("**Actual:**");
 code(scheduledKeyFields(a1));
@@ -191,14 +206,14 @@ if (driftA1.length > 0) {
 header("A2", "Mode B original schedule — Jan 31 loan start, 6 instalments");
 p("**Scenario:** Confirm date-fns clamping behaviour for an end-of-month-anchored schedule. Each row's due date is `addMonths(loanStartDate, i)`.");
 p("");
-p("**Inputs:** originalPrincipal $6,000, 6 instalments, principalPortion $1,000, monthlyRate 4%, loanStartDate 2026-01-31.");
+p(`**Inputs:** originalPrincipal $6,000, 6 instalments, monthlyPayment ${$(MONTHLY_PAYMENT_6000_6_4PCT)}, monthlyRate 4%, loanStartDate 2026-01-31.`);
 p("");
 p("**Expected behaviour:** Due dates alternate between end-of-month values that exist in the target month (28 Feb 2026 is not a leap year; April/June have 30 days).");
 p("");
 const a2Schedule = generateOriginalSchedule(
   600000,
   6,
-  100000,
+  MONTHLY_PAYMENT_6000_6_4PCT,
   4,
   d(2026, 1, 31),
 );
@@ -252,12 +267,12 @@ verdict(
 header("B2", "Mode B original schedule — Jan 1, 2028 leap year");
 p("**Scenario:** Check whether the Feb→Mar period in the original schedule reflects 29 days. The interest in the original schedule is `outstanding × monthly% / 100`, not days × daily rate, so leap day does not change the interest amount — only `daysInPeriod` may differ.");
 p("");
-p("**Inputs:** originalPrincipal $6,000, 6 instalments, principalPortion $1,000, monthlyRate 4%, loanStartDate 2028-01-01.");
+p(`**Inputs:** originalPrincipal $6,000, 6 instalments, monthlyPayment ${$(MONTHLY_PAYMENT_6000_6_4PCT)}, monthlyRate 4%, loanStartDate 2028-01-01.`);
 p("");
 const b2Schedule = generateOriginalSchedule(
   600000,
   6,
-  100000,
+  MONTHLY_PAYMENT_6000_6_4PCT,
   4,
   d(2028, 1, 1),
 );
@@ -331,14 +346,12 @@ verdict(
 header("C3", "Mode B original schedule — $100,000 / 24 instalments");
 p("**Scenario:** Confirm large-N original schedule generates without error and totals reconcile.");
 p("");
-p("**Inputs:** originalPrincipal $100,000.00, 24 instalments, auto principal, 4% monthly, loanStartDate 2026-01-01.");
+p(`**Inputs:** originalPrincipal $100,000.00, 24 instalments, monthlyPayment ${$(MONTHLY_PAYMENT_100000_24_4PCT)} (amortised), 4% monthly, loanStartDate 2026-01-01.`);
 p("");
-const c3Auto = autoPrincipalPortionCents(10_000_000, 24);
-p(`autoPrincipalPortionCents(10000000, 24) = ${c3Auto} (${$(c3Auto)})`);
 const c3Schedule = generateOriginalSchedule(
   10_000_000,
   24,
-  c3Auto,
+  MONTHLY_PAYMENT_100000_24_4PCT,
   4,
   d(2026, 1, 1),
 );
@@ -361,7 +374,7 @@ verdict(
 header("D1", "Mode B — 1 total instalment, 0 already paid");
 p("**Scenario:** Single-instalment loan paid in full as the first scheduled payment. Should produce an empty remainingSchedule and a one-row originalSchedule. newOutstanding = 0.");
 p("");
-p("**Inputs:** originalPrincipal $1,000, 1 instalment, 0 paid, outstanding $1,000, rate 48% annual, loanStartDate 2026-01-01, lastPaymentDate 2026-01-01, payOn 2026-02-01 (= todaysScheduledDate), principalPortion $1,000.");
+p(`**Inputs:** originalPrincipal $1,000, 1 instalment, 0 paid, outstanding $1,000, rate 48% annual, loanStartDate 2026-01-01, lastPaymentDate 2026-01-01, payOn 2026-02-01 (= todaysScheduledDate), monthlyPayment ${$(MONTHLY_PAYMENT_1_INSTALMENT_1000_4PCT)} (principal + 4%/mo interest).`);
 p("");
 const d1 = calculateScheduledPayment({
   originalPrincipalCents: 100000,
@@ -373,7 +386,7 @@ const d1 = calculateScheduledPayment({
   loanStartDate: d(2026, 1, 1),
   lastPaymentDate: d(2026, 1, 1),
   payOnDate: d(2026, 2, 1),
-  principalPortionCents: 100000,
+  monthlyPaymentCents: MONTHLY_PAYMENT_1_INSTALMENT_1000_4PCT,
 });
 code(scheduledKeyFields(d1));
 p("Original schedule:");
@@ -398,7 +411,7 @@ verdict(
 header("D2", "Mode B — 24 total instalments, 0 already paid");
 p("**Scenario:** Stress the engine with a 24-instalment loan from scratch. originalSchedule should be 24 rows, remainingSchedule 23, last row outstandingAfter = 0.");
 p("");
-p("**Inputs:** originalPrincipal $24,000, 24 instalments, 0 paid, outstanding $24,000, rate 48% annual, loanStartDate 2026-01-01, lastPaymentDate 2026-01-01, payOn 2026-02-01, principalPortion $1,000.");
+p(`**Inputs:** originalPrincipal $24,000, 24 instalments, 0 paid, outstanding $24,000, rate 48% annual, loanStartDate 2026-01-01, lastPaymentDate 2026-01-01, payOn 2026-02-01, monthlyPayment ${$(MONTHLY_PAYMENT_24000_24_4PCT)} (amortised).`);
 p("");
 const d2 = calculateScheduledPayment({
   originalPrincipalCents: 2_400_000,
@@ -410,7 +423,7 @@ const d2 = calculateScheduledPayment({
   loanStartDate: d(2026, 1, 1),
   lastPaymentDate: d(2026, 1, 1),
   payOnDate: d(2026, 2, 1),
-  principalPortionCents: 100_000,
+  monthlyPaymentCents: MONTHLY_PAYMENT_24000_24_4PCT,
 });
 code(scheduledKeyFields(d2));
 p(`originalSchedule rows: ${d2.originalSchedule.length}`);
@@ -429,11 +442,9 @@ verdict(
 // ============================================================================
 // E1 — $1,000 / 7 instalments rounding remainder
 // ============================================================================
-header("E1", "Mode B rounding — $1,000 / 7 instalments");
-p("**Scenario:** $1,000 / 7 gives 142.857… cents per instalment, rounding to 14286 cents per row. 7 × 14286 = 100,002 cents — over by 2 cents. The last row must absorb the negative remainder so the loan closes at exactly $0.");
+header("E1", "Mode B rounding — $1,000 / 7 instalments (annuity)");
+p(`**Scenario:** $1,000 / 7 instalments at 4%/mo, amortised monthly payment ${$(MONTHLY_PAYMENT_1000_7_4PCT)}. The last row must absorb the cumulative rounding remainder so the loan closes at exactly $0.`);
 p("");
-const e1Auto = autoPrincipalPortionCents(100000, 7);
-p(`autoPrincipalPortionCents(100000, 7) = ${e1Auto} cents (${$(e1Auto)})`);
 const e1 = calculateScheduledPayment({
   originalPrincipalCents: 100000,
   totalInstalments: 7,
@@ -444,7 +455,7 @@ const e1 = calculateScheduledPayment({
   loanStartDate: d(2026, 1, 1),
   lastPaymentDate: d(2026, 1, 1),
   payOnDate: d(2026, 2, 1),
-  principalPortionCents: e1Auto,
+  monthlyPaymentCents: MONTHLY_PAYMENT_1000_7_4PCT,
 });
 code(scheduledKeyFields(e1));
 p("Original schedule:");
@@ -456,27 +467,24 @@ const e1LastRowPrincipal =
   e1.remainingSchedule[e1.remainingSchedule.length - 1].principalCents;
 p(`All principals (today + remaining): ${e1AllPrincipals.map((c) => $(c)).join(", ")}`);
 p(`Sum of principals: ${$(e1PrincipalSum)} (must equal $1,000.00)`);
-p(`Last remaining row principal: ${$(e1LastRowPrincipal)} (auto was ${$(e1Auto)})`);
+p(`Last remaining row principal: ${$(e1LastRowPrincipal)}`);
 const e1LastOriginalPrincipal =
   e1.originalSchedule[e1.originalSchedule.length - 1].principalCents;
 p(`Original schedule last row principal: ${$(e1LastOriginalPrincipal)}`);
 verdict(
   "E1",
-  e1PrincipalSum === 100000 &&
-    e1LastRowPrincipal < e1Auto,
+  e1PrincipalSum === 100000,
   e1PrincipalSum === 100000
-    ? `Total principal closes to exactly $1,000.00. Last remaining row's principal = ${$(e1LastRowPrincipal)} = auto − ${e1Auto - e1LastRowPrincipal}¢. Officers may find a "less than auto" last row counter-intuitive — worth a UI hint, not a bug.`
+    ? `Total principal closes to exactly $1,000.00 across today + 6 remaining rows. Last remaining row absorbs the cumulative cent rounding (principal = ${$(e1LastRowPrincipal)}).`
     : `Total principal failed to reconcile: ${$(e1PrincipalSum)}.`,
 );
 
 // ============================================================================
 // E2 — $999.99 / 3 instalments
 // ============================================================================
-header("E2", "Mode B rounding — $999.99 / 3 instalments");
-p("**Scenario:** 99,999 ÷ 3 = 33,333 exactly. No rounding remainder. Confirm sums.");
+header("E2", "Mode B rounding — $999.99 / 3 instalments (annuity)");
+p(`**Scenario:** 99,999¢ amortised over 3 instalments at 4%/mo. Confirm principal sums to the original principal to the cent.`);
 p("");
-const e2Auto = autoPrincipalPortionCents(99999, 3);
-p(`autoPrincipalPortionCents(99999, 3) = ${e2Auto} cents (${$(e2Auto)})`);
 const e2 = calculateScheduledPayment({
   originalPrincipalCents: 99999,
   totalInstalments: 3,
@@ -487,7 +495,7 @@ const e2 = calculateScheduledPayment({
   loanStartDate: d(2026, 1, 1),
   lastPaymentDate: d(2026, 1, 1),
   payOnDate: d(2026, 2, 1),
-  principalPortionCents: e2Auto,
+  monthlyPaymentCents: MONTHLY_PAYMENT_999_99_3_4PCT,
 });
 const e2Sum =
   e2.principalPortionCents + e2.remainingSchedule.reduce((s, r) => s + r.principalCents, 0);
@@ -539,7 +547,8 @@ const f2 = calculateScheduledPayment({
   loanStartDate: d(2025, 8, 1),
   lastPaymentDate: d(2026, 1, 1),
   payOnDate: d(2026, 2, 1),
-  principalPortionCents: 100000,
+  // Monthly payment covers 4%/mo interest on $1,000 ($40) + the $1,000 principal.
+  monthlyPaymentCents: MONTHLY_PAYMENT_LAST_ROW_1000_4PCT,
 });
 code(scheduledKeyFields(f2));
 p(`remainingSchedule rows: ${f2.remainingSchedule.length}`);
@@ -599,7 +608,7 @@ verdict(
 header("H1", "Mode B early extreme — paid 1 day after loan start");
 p("**Scenario:** Officer pays the first instalment 30 days early. Days = 1, today's interest tiny, but the first remaining row covers a 58-day stretch.");
 p("");
-p("**Inputs:** originalPrincipal $6,000, 6 instalments, 0 paid, outstanding $6,000, rate 48% annual, loanStartDate 2026-01-01, lastPaymentDate 2026-01-01, payOn 2026-01-02, principalPortion $1,000.");
+p(`**Inputs:** originalPrincipal $6,000, 6 instalments, 0 paid, outstanding $6,000, rate 48% annual, loanStartDate 2026-01-01, lastPaymentDate 2026-01-01, payOn 2026-01-02, monthlyPayment ${$(MONTHLY_PAYMENT_6000_6_4PCT)} (amortised).`);
 p("");
 const h1 = calculateScheduledPayment({
   originalPrincipalCents: 600000,
@@ -611,16 +620,17 @@ const h1 = calculateScheduledPayment({
   loanStartDate: d(2026, 1, 1),
   lastPaymentDate: d(2026, 1, 1),
   payOnDate: d(2026, 1, 2),
-  principalPortionCents: 100000,
+  monthlyPaymentCents: MONTHLY_PAYMENT_6000_6_4PCT,
 });
 code(scheduledKeyFields(h1));
 const h1FirstRowDays = h1.remainingSchedule[0]?.daysInPeriod ?? -1;
 const h1FirstRowInterest = h1.remainingSchedule[0]?.interestCents ?? -1;
 p(`First remaining row: ${h1FirstRowDays} days, interest ${$(h1FirstRowInterest)}`);
+p(`Today's proration: ${h1.days}/${h1.daysInScheduledMonth} = ${(h1.prorationFactor * 100).toFixed(2)}%, prorated interest ${$(h1.interestPortionCents)}`);
 verdict(
   "H1",
-  h1.days === 1 && h1FirstRowDays === 58,
-  `days = 1 (tiny today's interest = ${$(h1.interestPortionCents)}). First remaining row spans 58 days (Jan 2 → Mar 1) and accrues ${$(h1FirstRowInterest)} of interest — about 2× a "normal" 30-day row's interest at this rate. Math is per spec, but borrowers may be surprised to see the next row's interest jump after paying so early. UI / training consideration, not a bug.`,
+  h1.days === 1 && h1.prorationFactor < 0.05,
+  `days = 1, proration factor ${(h1.prorationFactor * 100).toFixed(2)}% -> prorated interest ${$(h1.interestPortionCents)}. Principal portion is the full ${$(h1.principalPortionCents)} regardless of timing. First remaining row covers ${h1FirstRowDays} days using the standard monthly-rate × outstanding formula (not days-based), so its interest is the standard scheduled amount; today's prorated saving is the only borrower benefit of paying early in this model.`,
 );
 
 // ============================================================================
@@ -639,7 +649,7 @@ const h2 = calculateScheduledPayment({
   loanStartDate: d(2026, 1, 1),
   lastPaymentDate: d(2026, 1, 1),
   payOnDate: d(2026, 1, 31),
-  principalPortionCents: 100000,
+  monthlyPaymentCents: MONTHLY_PAYMENT_6000_6_4PCT,
 });
 code(scheduledKeyFields(h2));
 verdict(
@@ -681,7 +691,7 @@ try {
     loanStartDate: d(2025, 12, 1),
     lastPaymentDate: d(2026, 2, 1),
     payOnDate: d(2026, 3, 1),
-    principalPortionCents: 100000,
+    monthlyPaymentCents: MONTHLY_PAYMENT_6000_6_4PCT,
   });
   throw new Error("Expected AllInstalmentsPaidError sentinel");
 } catch (e) {
@@ -701,7 +711,7 @@ try {
     loanStartDate: d(2025, 12, 1),
     lastPaymentDate: d(2026, 2, 1),
     payOnDate: d(2026, 3, 15),
-    principalPortionCents: 100000,
+    monthlyPaymentCents: MONTHLY_PAYMENT_6000_6_4PCT,
   });
   throw new Error("Expected LatePaymentError sentinel");
 } catch (e) {

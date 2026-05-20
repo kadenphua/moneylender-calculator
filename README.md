@@ -55,6 +55,12 @@ history, the IndexedDB schema migrates automatically:
 - v1 → v2: legacy records are backfilled with `mode = "fullSettlement"`.
 - v2 → v3: legacy scheduled records gain a `loanStartDate` (defaulted to
   `lastPaymentDate`) and an empty `originalSchedule`.
+- v3 → v4: legacy scheduled records gain a `monthlyPaymentCents` input
+  (best-effort backfill: `principalPortionCents` + first-row scheduled
+  interest) plus `daysInScheduledMonth`, `prorationFactor`, and
+  `scheduledInterestCents` defaults. `principalPortionCents` is no
+  longer an input — Mode B now derives it per row from the amortisation
+  formula.
 No officer action required.
 
 ## What's in the box
@@ -68,23 +74,25 @@ No officer action required.
   - **Scheduled Payment / Early (Mode B):** borrower ref, original loan
     principal, **loan start date (required)**, total instalments,
     instalments already paid, outstanding principal as of last payment,
-    rate + unit, **last payment date (or the loan start date if no
-    payments have been made yet)**, pay-on date, principal portion per
-    instalment. For a brand-new loan with `instalmentsAlreadyPaid = 0`,
-    put the disbursement / loan start date in the "last payment date"
-    field as well — mathematically that's the correct anchor for interest
-    to accrue from. The principal-portion field auto-fills from
-    `original / total` and shows a `(auto: $X.XX — change if rounding
-    differs)` hint; the officer can override. Result shows today's
-    principal + interest + TODAY'S AMOUNT, new outstanding, next scheduled
-    due date, days from today to next due date, and two schedule tables
-    rendered side-by-side: the **Original Schedule** from the loan
-    agreement (with `✓` markers on paid rows and `← paying today` on the
+    rate + unit (defaults to **per month** — the CRM convention),
+    **last payment date (or the loan start date if no payments have
+    been made yet)**, pay-on date, **monthly payment amount** (from the
+    CRM or Note of Contract — required). For a brand-new loan with
+    `instalmentsAlreadyPaid = 0`, put the disbursement / loan start
+    date in the "last payment date" field as well — mathematically
+    that's the correct anchor for interest to accrue from. Result shows
+    the days-since-last-payment vs days-in-scheduled-month breakdown,
+    the scheduled monthly interest (un-prorated), the proration factor,
+    the prorated interest, the principal portion, the large TODAY'S
+    AMOUNT, the new outstanding, the next scheduled due date, the days
+    from today to that next due date, and two schedule tables rendered
+    side-by-side: the **Original Schedule** from the loan agreement
+    (with `✓` markers on paid rows and `← paying today` on the
     instalment being paid this session) next to the **New Remaining
-    Schedule** recalculated from the actual pay-on date. When the actual
-    schedule costs less than the original future rows, a "Total saving
-    across remaining schedule: S$X.XX" summary line is shown beneath
-    the tables; otherwise it's hidden.
+    Schedule** recalculated from the new outstanding balance. When the
+    actual schedule costs less than the original future rows, a "Total
+    saving across remaining schedule: S$X.XX" summary line is shown
+    beneath the tables; otherwise it's hidden.
 - **Print Receipt**: hits the browser's native print dialog. Mode B
   receipts print in **A4 landscape** so the Original / New comparison
   fits side-by-side; Mode A receipts share the same page size. Both
@@ -121,28 +129,45 @@ No officer action required.
   ```
   Outstanding late fee is added as-is. Mode A does not compute late fees —
   the officer enters whatever's already on record.
-- **Mode B formula (today's payment):**
+- **Mode B model:** standard amortisation against a fixed monthly
+  payment (annuity-style — matches the CRM). Per-row formula:
   ```
-  days = differenceInCalendarDays(payOnDate, lastPaymentDate)
-  dailyRate = (annualRate / 100) / 365
-  interestPortion = roundHalfUp(outstandingCents × dailyRate × days)
-  todayAmount = principalPortion + interestPortion
-  newOutstanding = outstandingCents - principalPortion
+  monthlyRate = (rateUnit === "annual") ? ratePercent / 12 : ratePercent
+  interestCents       = roundHalfUp(outstandingCents × monthlyRate / 100)
+  principalCents      = monthlyPaymentCents − interestCents
+  totalCents          = monthlyPaymentCents  (constant for every row except the last)
+  outstandingAfterRow = outstandingCents − principalCents
   ```
+  The last row's principal absorbs whatever balance remains so the loan
+  closes at exactly zero (its total may differ from
+  `monthlyPaymentCents` by a few cents).
+- **Mode B today's payment (the early/on-time math):**
+  ```
+  daysSinceLastPayment = differenceInCalendarDays(payOnDate, lastPaymentDate)
+  daysInScheduledMonth = differenceInCalendarDays(
+                            addMonths(lastPaymentDate, 1),
+                            lastPaymentDate)
+  prorationFactor      = daysSinceLastPayment / daysInScheduledMonth
+  scheduledInterest    = roundHalfUp(outstandingCents × monthlyRate / 100)
+  proratedInterest     = roundHalfUp(scheduledInterest × prorationFactor)
+  principalPortion     = monthlyPaymentCents − scheduledInterest
+                         (the principal the borrower would have paid on time)
+  todayAmount          = principalPortion + proratedInterest
+  newOutstanding       = outstandingCents − principalPortion
+  ```
+  On-time means `prorationFactor = 1.0`. Same-day payment means
+  `prorationFactor = 0` (today's interest is zero, but principal is
+  still allocated in full).
 - **Mode B lateness check:** if
   `payOnDate > addMonths(lastPaymentDate, 1)` (strict `>`), refuse and
-  surface the legacy-CRM message. Paying exactly on the due date is
-  on-time.
-- **Mode B Policy X (remaining schedule):** the first future instalment's
-  due date is `addMonths(lastPaymentDate, 2)` — i.e., the **original**
-  scheduled date, **not** shifted forward by today's payment. Each
-  subsequent row uses `addMonths(prev, 1)` and the calendar-day
-  difference between adjacent rows. The first row's interest covers the
-  actual days from `payOnDate` to that fixed due date, which is longer
-  than 28-31 days whenever today's payment was early.
-- **Mode B last-row rounding:** when the auto principal portion doesn't
-  divide the original loan evenly, the last row's principal absorbs the
-  cent-level remainder so the loan closes at exactly zero outstanding.
+  surface the legacy-CRM message. Paying exactly on the scheduled date
+  is on-time.
+- **Mode B remaining-schedule rows** are numbered
+  `(instalmentsAlreadyPaid + 2) .. totalInstalments`, each anchored
+  via `addMonths(loanStartDate, rowNumber)`. The amortisation formula
+  is the same as the original schedule — only the starting balance
+  differs (it's the new outstanding after today's payment, not the
+  original principal).
 
 ## Test cases for the accountant
 
@@ -161,22 +186,23 @@ each one into the calculator UI and verify the on-screen total matches.
 | 6 | $2,400.00   | 48% per year    | 2026-05-01   | 2026-06-15  | $0       | 45   | $142.03  | **$2,542.03** |
 | 7 | $2,400.00   | 48% per year    | 2026-05-22   | 2026-05-01  | —        | —    | —        | **Error** — pay-on before last payment is rejected |
 
-### Mode B — Scheduled Payment (Early / On-time)
+### Mode B — Scheduled Payment (Early / On-time, annuity model)
 
-Shared inputs unless stated otherwise: original loan principal $6,000,
-**loan start date 2025-12-01**, total instalments 6, instalments already
-paid 2, outstanding principal $4,000.00, rate 48% per year, last payment
-2026-02-01, principal portion $1,000.00.
+These match the CRM screenshots cent-for-cent. **Loan A** = $1,000 over
+6 instalments at 3.25% per month, monthly payment $186.13, loan start
+2026-04-04 (used by tests 8 and 10–14). **Loan B** = $5,000 over 12
+instalments at 3.25% per month, monthly payment $509.84, loan start
+2026-04-21 (test 9).
 
-| #  | Variation                                | Pay-on date | Days | Interest portion | TODAY'S AMOUNT | New outstanding | Next due date | Days to next due | Notes |
-|----|------------------------------------------|-------------|------|------------------|----------------|-----------------|---------------|------------------|-------|
-| 8  | On-time payment                          | 2026-03-01  | 28   | $147.29          | **$1,147.29**  | $3,000.00       | 2026-04-01    | 31 days          | Remaining schedule: Apr 1 / May 1 / Jun 1; closes to $0. Original Schedule shows rows 1-2 ✓, row 3 "← paying today", rows 4-6 future. |
-| 9  | Same loan paid 7 days early              | 2026-02-22  | 21   | $110.47          | **$1,110.47**  | $3,000.00       | 2026-04-01    | 38 days          | **Policy X** — next due date does NOT shift. First remaining row covers 38 days, so its interest is higher than the on-time case's first remaining row. |
-| 10 | Same loan paid late                      | 2026-03-15  | —    | —                | —              | —               | —             | —                | **Refused.** Use the legacy CRM for late payments. |
-| 11 | Same loan but `instalmentsAlreadyPaid = 6` | 2026-03-01 | —    | —                | —              | —               | —             | —                | **Refused.** "All instalments already paid." |
-| 12 | $1,000 loan, **loan start 2026-01-01**, 3 instalments, none paid yet, principal portion $333.33, pay-on 2026-02-01 (one month after 2026-01-01 last payment) | 2026-02-01 | 31 | $40.77 | **$374.10** | $666.67 | 2026-03-01 | 28 days | Auto principal $333.33 (33333¢) is short 1¢ over 3 rows. **Last remaining row's principal becomes $333.34** so today + 2 remaining rows sum to exactly $1,000 of principal. |
-| 13 | Validation: loan start date **after** last payment date (e.g. loan start 2026-03-01, last payment 2026-02-01) | — | — | — | — | — | — | — | **Refused** with "Last payment date cannot be before loan start date." |
-| 14 | `generateOriginalSchedule($6,000, 6 instalments, $1,000 principal, 4% monthly, loan-start any date)` | — | — | — | — | — | — | — | Canonical agreement schedule: 6 rows, principal $1,000 each, interest $240 / $200 / $160 / $120 / $80 / $40, totals $1,240 / $1,200 / $1,160 / $1,120 / $1,080 / $1,040. Sum of all principals = exactly $6,000. |
+| #  | Case | Asserts |
+|----|------|---------|
+| 8  | **Loan A original schedule** — `generateOriginalSchedule($1,000, 6, $186.13, 3.25%/mo, 2026-04-04)` | 6 rows. Row 1 P=$153.63 I=$32.50 T=$186.13 · Row 2 P=$158.62 I=$27.51 · Row 3 P=$163.78 I=$22.35 · Row 4 P=$169.10 I=$17.03 · Row 5 P=$174.60 I=$11.53 · Row 6 P=$180.27 I=$5.86 T=$186.13. Sum of principals = exactly $1,000.00. |
+| 9  | **Loan B original schedule** — `generateOriginalSchedule($5,000, 12, $509.84, 3.25%/mo, 2026-04-21)` | 12 rows. Rows 1-11 each total $509.84. **Last row totals $509.78 (six cents less) because it absorbs the cumulative cent-rounding remainder.** Sum of principals = exactly $5,000.00. |
+| 10 | **Loan A, on-time** — first instalment, payOn 2026-05-04 (= loan-start + 1 month) | days = 30, daysInScheduledMonth = 30, prorationFactor = 1.0, scheduledInterest = $32.50, **proratedInterest = $32.50**, principalPortion = $153.63, **TODAY = $186.13**, newOutstanding = $846.37. Matches CRM row 1 exactly. |
+| 11 | **Loan A, 7 days early** — same inputs but payOn 2026-04-27 | days = 23, prorationFactor ≈ 76.67% (23/30), scheduledInterest = $32.50, **proratedInterest = $24.92**, principalPortion = $153.63 (unchanged), **TODAY = $178.55**, newOutstanding = $846.37 (also unchanged — principal allocation does not depend on timing under this model). |
+| 12 | **Loan A, same-day payment** — payOn 2026-04-04 (same as lastPayment) | days = 0, prorationFactor = 0, **proratedInterest = $0.00**, principalPortion = $153.63, **TODAY = $153.63**, newOutstanding = $846.37. |
+| 13 | Validation: loan start date **after** last payment date | **Refused** with "Last payment date cannot be before loan start date." |
+| 14 | Validation: payOn > `addMonths(lastPayment, 1)` | **Refused** with `LatePaymentError` (use the legacy CRM message). |
 
 ## ⚠️ Before deploying to the team
 
@@ -210,9 +236,9 @@ CRM.** This calculator deliberately refuses them in Mode B.
 src/
 ├── lib/
 │   ├── calc.ts        ← pure engine (no React, lift-ready for CRM)
-│   ├── calc.test.ts   ← 14 acceptance tests (7 Mode A + 7 Mode B)
+│   ├── calc.test.ts   ← 14 acceptance tests (7 Mode A + 7 Mode B annuity)
 │   ├── format.ts      ← S$ formatter, date helpers, Asia/Singapore
-│   ├── db.ts          ← IndexedDB wrapper, v1→v2 mode, v2→v3 loanStartDate
+│   ├── db.ts          ← IndexedDB wrapper, v1→v2 mode, v2→v3 loanStartDate, v3→v4 monthlyPayment
 │   ├── schema.ts      ← zod form schemas (Mode A + Mode B)
 │   ├── types.ts       ← CalculationRecord discriminated union
 │   └── utils.ts       ← cn() (shadcn)
@@ -237,4 +263,4 @@ src/
 - No WhatsApp / SMS sending.
 - No legacy CRM integration.
 - No multi-currency support (SGD only).
-- **No late-payment handling — that's still the legacy CRM's job.**
+- **No late-payment handling — that's still the legacy CRM's job.** 

@@ -92,10 +92,10 @@ export interface ScheduledPaymentInput {
   instalmentsAlreadyPaid: number;
   rateUnit: RateUnit;
   ratePercent: number;
+  monthlyPaymentCents: number;
   loanStartDate: Date;
   lastPaymentDate: Date;
   payOnDate: Date;
-  principalPortionCents: number;
 }
 
 export interface ScheduleRow {
@@ -112,6 +112,9 @@ export interface ScheduledPaymentResult {
   days: number;
   dailyRate: number;
   monthlyRatePercent: number;
+  daysInScheduledMonth: number;
+  prorationFactor: number;
+  scheduledInterestCents: number;
   principalPortionCents: number;
   interestPortionCents: number;
   todayAmountCents: number;
@@ -122,10 +125,20 @@ export interface ScheduledPaymentResult {
   originalSchedule: ScheduleRow[];
 }
 
+/**
+ * Generates the full agreed instalment schedule (standard amortisation
+ * against a fixed monthly payment). Each row's interest is computed as
+ *   roundHalfUp(outstanding × monthlyRatePercent / 100)
+ * and each row's principal is `monthlyPaymentCents − interest`. The last
+ * row's principal is forced to whatever balance remains so the loan closes
+ * at exactly zero, even if cumulative cent rounding doesn't divide evenly
+ * (the last row's total may then differ from monthlyPaymentCents by a few
+ * cents — matches the CRM behaviour).
+ */
 export function generateOriginalSchedule(
   originalPrincipalCents: number,
   totalInstalments: number,
-  principalPortionCents: number,
+  monthlyPaymentCents: number,
   monthlyRatePercent: number,
   loanStartDate: Date,
 ): ScheduleRow[] {
@@ -139,9 +152,9 @@ export function generateOriginalSchedule(
       `generateOriginalSchedule: totalInstalments must be >= 1, got ${totalInstalments}`,
     );
   }
-  if (!Number.isInteger(principalPortionCents) || principalPortionCents <= 0) {
+  if (!Number.isInteger(monthlyPaymentCents) || monthlyPaymentCents <= 0) {
     throw new Error(
-      `generateOriginalSchedule: principalPortionCents must be a positive integer, got ${principalPortionCents}`,
+      `generateOriginalSchedule: monthlyPaymentCents must be a positive integer, got ${monthlyPaymentCents}`,
     );
   }
   if (!Number.isFinite(monthlyRatePercent) || monthlyRatePercent < 0) {
@@ -151,20 +164,17 @@ export function generateOriginalSchedule(
   }
 
   const rows: ScheduleRow[] = [];
+  let outstanding = originalPrincipalCents;
   for (let i = 1; i <= totalInstalments; i++) {
     const isLast = i === totalInstalments;
-    const outstandingAtStartCents =
-      originalPrincipalCents - (i - 1) * principalPortionCents;
     const interestCents = roundHalfUp(
-      (outstandingAtStartCents * monthlyRatePercent) / 100,
+      (outstanding * monthlyRatePercent) / 100,
     );
     const principalCents = isLast
-      ? outstandingAtStartCents
-      : principalPortionCents;
+      ? outstanding
+      : monthlyPaymentCents - interestCents;
     const totalCents = principalCents + interestCents;
-    const outstandingAfterRowCents = isLast
-      ? 0
-      : outstandingAtStartCents - principalCents;
+    const outstandingAfterRowCents = isLast ? 0 : outstanding - principalCents;
     const dueDate = addMonths(loanStartDate, i);
     const prevDueDate = addMonths(loanStartDate, i - 1);
     rows.push({
@@ -176,26 +186,10 @@ export function generateOriginalSchedule(
       totalCents,
       outstandingAfterRowCents,
     });
+    outstanding = outstandingAfterRowCents;
   }
 
   return rows;
-}
-
-export function autoPrincipalPortionCents(
-  originalPrincipalCents: number,
-  totalInstalments: number,
-): number {
-  if (!Number.isInteger(originalPrincipalCents) || originalPrincipalCents <= 0) {
-    throw new Error(
-      `autoPrincipalPortionCents: originalPrincipalCents must be a positive integer, got ${originalPrincipalCents}`,
-    );
-  }
-  if (!Number.isInteger(totalInstalments) || totalInstalments < 1) {
-    throw new Error(
-      `autoPrincipalPortionCents: totalInstalments must be >= 1, got ${totalInstalments}`,
-    );
-  }
-  return roundHalfUp(originalPrincipalCents / totalInstalments);
 }
 
 export function calculateScheduledPayment(
@@ -208,10 +202,10 @@ export function calculateScheduledPayment(
     instalmentsAlreadyPaid,
     rateUnit,
     ratePercent,
+    monthlyPaymentCents,
     loanStartDate,
     lastPaymentDate,
     payOnDate,
-    principalPortionCents,
   } = input;
 
   if (!Number.isInteger(originalPrincipalCents) || originalPrincipalCents <= 0) {
@@ -246,14 +240,9 @@ export function calculateScheduledPayment(
       `calculateScheduledPayment: ratePercent must be > 0 and < 1000, got ${ratePercent}`,
     );
   }
-  if (!Number.isInteger(principalPortionCents) || principalPortionCents <= 0) {
+  if (!Number.isInteger(monthlyPaymentCents) || monthlyPaymentCents <= 0) {
     throw new Error(
-      `calculateScheduledPayment: principalPortionCents must be a positive integer, got ${principalPortionCents}`,
-    );
-  }
-  if (principalPortionCents > outstandingCents) {
-    throw new Error(
-      `calculateScheduledPayment: principalPortionCents (${principalPortionCents}) must be <= outstandingCents (${outstandingCents})`,
+      `calculateScheduledPayment: monthlyPaymentCents must be a positive integer, got ${monthlyPaymentCents}`,
     );
   }
   if (differenceInCalendarDays(lastPaymentDate, loanStartDate) < 0) {
@@ -261,7 +250,6 @@ export function calculateScheduledPayment(
   }
 
   // Lateness check: today's scheduled instalment is lastPaymentDate + 1 month.
-  // payOnDate > that date => late => refuse and route officer to legacy CRM.
   const todaysScheduledDate = addMonths(lastPaymentDate, 1);
   if (differenceInCalendarDays(payOnDate, todaysScheduledDate) > 0) {
     throw new LatePaymentError();
@@ -272,62 +260,86 @@ export function calculateScheduledPayment(
     );
   }
 
-  // Today's payment.
-  const days = daysBetween(lastPaymentDate, payOnDate);
+  const monthlyRatePercent =
+    rateUnit === "annual" ? ratePercent / 12 : ratePercent;
+  // dailyRate is retained in the result for backward-compatibility with the
+  // stored ScheduledPaymentOutputsStored shape; the new model does not use it
+  // for interest math (interest is monthlyRatePercent-driven, prorated for
+  // today only).
   const dailyRate =
     rateUnit === "annual"
       ? annualToDaily(ratePercent)
       : monthlyToDaily(ratePercent);
-  const monthlyRatePercent =
-    rateUnit === "annual" ? ratePercent / 12 : ratePercent;
-  const interestPortionCents = roundHalfUp(
-    outstandingCents * dailyRate * days,
+
+  // Today's payment — amortise the scheduled instalment, then prorate the
+  // INTEREST portion by (days since last payment) / (days in the scheduled
+  // month). Principal portion is unchanged regardless of timing — it always
+  // equals the amount the borrower would have paid down on time.
+  const daysSinceLastPayment = daysBetween(lastPaymentDate, payOnDate);
+  const daysInScheduledMonth = differenceInCalendarDays(
+    todaysScheduledDate,
+    lastPaymentDate,
   );
-  const todayAmountCents = principalPortionCents + interestPortionCents;
+  const prorationFactor =
+    daysInScheduledMonth > 0
+      ? daysSinceLastPayment / daysInScheduledMonth
+      : 1;
+  const scheduledInterestCents = roundHalfUp(
+    (outstandingCents * monthlyRatePercent) / 100,
+  );
+  const proratedInterestCents = roundHalfUp(
+    scheduledInterestCents * prorationFactor,
+  );
+  const principalPortionCents = monthlyPaymentCents - scheduledInterestCents;
+  if (principalPortionCents <= 0) {
+    throw new Error(
+      `calculateScheduledPayment: monthlyPaymentCents (${monthlyPaymentCents}) does not cover scheduled interest (${scheduledInterestCents}); principal portion would be non-positive`,
+    );
+  }
+  if (principalPortionCents > outstandingCents) {
+    throw new Error(
+      `calculateScheduledPayment: principal portion derived from monthly payment (${principalPortionCents}) exceeds outstanding (${outstandingCents})`,
+    );
+  }
+  const todayAmountCents = principalPortionCents + proratedInterestCents;
   const newOutstandingCents = outstandingCents - principalPortionCents;
 
-  // Remaining schedule (Policy X — fixed original due dates).
-  // First future row sits at the next ORIGINAL scheduled date AFTER today's
-  // payment, i.e. lastPaymentDate + 2 months. (Spec asserts TEST 9's
-  // nextDueDate == 2026-04-01 == lastPaymentDate + 2 months even though
-  // today's payment was a week early.)
-  const firstFutureDueDate = addMonths(lastPaymentDate, 2);
-  const remainingCount = totalInstalments - instalmentsAlreadyPaid - 1;
+  // Remaining schedule rows are numbered (instalmentsAlreadyPaid + 2)
+  // .. totalInstalments, each anchored to loanStartDate via addMonths(start,
+  // rowNumber). Same amortisation formula as the original schedule, just with
+  // newOutstandingCents as the starting balance.
+  const firstFutureRowNumber = instalmentsAlreadyPaid + 2;
+  const firstFutureDueDate = addMonths(loanStartDate, firstFutureRowNumber);
   const daysFromPayOnToNextDue = differenceInCalendarDays(
     firstFutureDueDate,
     payOnDate,
   );
 
-  // Anchor each remaining-schedule row to loanStartDate (same anchoring as
-  // generateOriginalSchedule) so the two schedules never drift apart on
-  // end-of-month loans. daysInPeriod is still the calendar gap from the
-  // previous due date — or from payOnDate for row 0 — so interest is
-  // computed against the actual elapsed days.
   const remainingSchedule: ScheduleRow[] = [];
   let remainingOutstandingCents = newOutstandingCents;
   let prevDueDate: Date = payOnDate;
-  for (let i = 0; i < remainingCount; i++) {
-    const isLast = i === remainingCount - 1;
-    const dueDate = addMonths(
-      loanStartDate,
-      instalmentsAlreadyPaid + 2 + i,
-    );
-    const daysInPeriod = differenceInCalendarDays(dueDate, prevDueDate);
+  for (
+    let rowNumber = firstFutureRowNumber;
+    rowNumber <= totalInstalments;
+    rowNumber++
+  ) {
+    const isLast = rowNumber === totalInstalments;
+    const dueDate = addMonths(loanStartDate, rowNumber);
     const interestCents = roundHalfUp(
-      remainingOutstandingCents * dailyRate * daysInPeriod,
+      (remainingOutstandingCents * monthlyRatePercent) / 100,
     );
     const principalCents = isLast
       ? remainingOutstandingCents
-      : principalPortionCents;
+      : monthlyPaymentCents - interestCents;
     const totalCents = principalCents + interestCents;
     const outstandingAfterRowCents = isLast
       ? 0
       : remainingOutstandingCents - principalCents;
 
     remainingSchedule.push({
-      rowNumber: i + 1,
+      rowNumber,
       dueDate,
-      daysInPeriod,
+      daysInPeriod: differenceInCalendarDays(dueDate, prevDueDate),
       principalCents,
       interestCents,
       totalCents,
@@ -341,17 +353,20 @@ export function calculateScheduledPayment(
   const originalSchedule = generateOriginalSchedule(
     originalPrincipalCents,
     totalInstalments,
-    principalPortionCents,
+    monthlyPaymentCents,
     monthlyRatePercent,
     loanStartDate,
   );
 
   return {
-    days,
+    days: daysSinceLastPayment,
     dailyRate,
     monthlyRatePercent,
+    daysInScheduledMonth,
+    prorationFactor,
+    scheduledInterestCents,
     principalPortionCents,
-    interestPortionCents,
+    interestPortionCents: proratedInterestCents,
     todayAmountCents,
     newOutstandingCents,
     nextDueDate: firstFutureDueDate,

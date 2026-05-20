@@ -2,7 +2,7 @@ import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import type { CalculationRecord } from "./types";
 
 const DB_NAME = "moneylender-calc";
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const STORE = "calculations";
 
 interface MoneylenderDB extends DBSchema {
@@ -64,6 +64,70 @@ function getDb(): Promise<IDBPDatabase<MoneylenderDB>> {
             cursor = await cursor.continue();
           }
         }
+        if (oldVersion < 4) {
+          // v3 -> v4: Mode B rebuilt as annuity amortisation. The old
+          // `principalPortionCents` input field becomes `monthlyPaymentCents`
+          // (best-effort backfill: principalPortionCents + first-row scheduled
+          // interest). Output gains daysInScheduledMonth, prorationFactor and
+          // scheduledInterestCents — defaulted safely for legacy records.
+          // originalSchedule is left as-is (empty for pre-v3 records per spec).
+          const store = tx.objectStore(STORE);
+          let cursor = await store.openCursor();
+          while (cursor) {
+            const value = cursor.value as unknown as Record<string, unknown>;
+            if (value["mode"] === "scheduled") {
+              const inputs = (value["inputs"] ?? {}) as Record<string, unknown>;
+              const outputs = (value["outputs"] ?? {}) as Record<string, unknown>;
+              if (typeof inputs["monthlyPaymentCents"] !== "number") {
+                const principalPortion =
+                  typeof inputs["principalPortionCents"] === "number"
+                    ? (inputs["principalPortionCents"] as number)
+                    : 0;
+                const ratePercentRaw =
+                  typeof inputs["ratePercent"] === "number"
+                    ? (inputs["ratePercent"] as number)
+                    : 0;
+                const monthlyRate =
+                  typeof outputs["monthlyRatePercent"] === "number" &&
+                  (outputs["monthlyRatePercent"] as number) > 0
+                    ? (outputs["monthlyRatePercent"] as number)
+                    : inputs["rateUnit"] === "annual"
+                      ? ratePercentRaw / 12
+                      : ratePercentRaw;
+                const originalPrincipal =
+                  typeof inputs["originalPrincipalCents"] === "number"
+                    ? (inputs["originalPrincipalCents"] as number)
+                    : 0;
+                const unroundedFirstInterest =
+                  (originalPrincipal * monthlyRate) / 100;
+                const firstRowScheduledInterest = Number.isFinite(
+                  unroundedFirstInterest,
+                )
+                  ? Math.sign(unroundedFirstInterest) *
+                    Math.floor(Math.abs(unroundedFirstInterest) + 0.5)
+                  : 0;
+                inputs["monthlyPaymentCents"] =
+                  principalPortion + firstRowScheduledInterest;
+              }
+              if (typeof outputs["daysInScheduledMonth"] !== "number") {
+                outputs["daysInScheduledMonth"] = 0;
+              }
+              if (typeof outputs["prorationFactor"] !== "number") {
+                outputs["prorationFactor"] = 1;
+              }
+              if (typeof outputs["scheduledInterestCents"] !== "number") {
+                outputs["scheduledInterestCents"] =
+                  typeof outputs["interestPortionCents"] === "number"
+                    ? (outputs["interestPortionCents"] as number)
+                    : 0;
+              }
+              value["inputs"] = inputs;
+              value["outputs"] = outputs;
+              await cursor.update(value as unknown as CalculationRecord);
+            }
+            cursor = await cursor.continue();
+          }
+        }
       },
     });
   }
@@ -86,6 +150,31 @@ function normaliseRecord(value: CalculationRecord): CalculationRecord {
     }
     if (typeof outputs["monthlyRatePercent"] !== "number") {
       outputs["monthlyRatePercent"] = 0;
+    }
+    if (typeof inputs["monthlyPaymentCents"] !== "number") {
+      const principalPortion =
+        typeof inputs["principalPortionCents"] === "number"
+          ? (inputs["principalPortionCents"] as number)
+          : 0;
+      const scheduledInterest =
+        typeof outputs["scheduledInterestCents"] === "number"
+          ? (outputs["scheduledInterestCents"] as number)
+          : typeof outputs["interestPortionCents"] === "number"
+            ? (outputs["interestPortionCents"] as number)
+            : 0;
+      inputs["monthlyPaymentCents"] = principalPortion + scheduledInterest;
+    }
+    if (typeof outputs["daysInScheduledMonth"] !== "number") {
+      outputs["daysInScheduledMonth"] = 0;
+    }
+    if (typeof outputs["prorationFactor"] !== "number") {
+      outputs["prorationFactor"] = 1;
+    }
+    if (typeof outputs["scheduledInterestCents"] !== "number") {
+      outputs["scheduledInterestCents"] =
+        typeof outputs["interestPortionCents"] === "number"
+          ? (outputs["interestPortionCents"] as number)
+          : 0;
     }
     v["inputs"] = inputs;
     v["outputs"] = outputs;

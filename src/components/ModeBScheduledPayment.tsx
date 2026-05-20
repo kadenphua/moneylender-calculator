@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { v4 as uuidv4 } from "uuid";
-import { AlertCircle, Lock, Printer, RotateCcw } from "lucide-react";
+import { AlertCircle, Printer, RotateCcw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,7 +13,6 @@ import { ScheduleComparison } from "@/components/ScheduleComparison";
 
 import {
   AllInstalmentsPaidError,
-  autoPrincipalPortionCents,
   calculateScheduledPayment,
   centsToDisplay,
   dollarsToCents,
@@ -22,7 +21,6 @@ import {
 } from "@/lib/calc";
 import {
   dateToYmdLocal,
-  formatPercent,
   formatYmdShort,
   parseYmdLocal,
   todayYmdLocal,
@@ -51,80 +49,24 @@ export function ModeBScheduledPayment({
 }: Props) {
   const [result, setResult] = useState<ScheduledPaymentRecord | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [overrideOn, setOverrideOn] = useState(false);
 
   const {
     register,
     handleSubmit,
     reset,
     control,
-    watch,
-    setValue,
     formState: { errors, isSubmitting },
   } = useForm<ScheduledPaymentFormValues, unknown, ScheduledPaymentFormParsed>({
     resolver: zodResolver(scheduledPaymentFormSchema),
     defaultValues: defaultMobBValues(),
   });
 
-  const watchedOriginal = watch("originalPrincipalDollars");
-  const watchedTotal = watch("totalInstalments");
-
-  const autoPrincipalDollars = useMemo(() => {
-    const o =
-      typeof watchedOriginal === "number" && Number.isFinite(watchedOriginal)
-        ? watchedOriginal
-        : null;
-    const t =
-      typeof watchedTotal === "number" &&
-      Number.isInteger(watchedTotal) &&
-      watchedTotal > 0
-        ? watchedTotal
-        : null;
-    if (o === null || o <= 0 || t === null) return null;
-    return autoPrincipalPortionCents(dollarsToCents(o), t) / 100;
-  }, [watchedOriginal, watchedTotal]);
-
-  // When the override toggle is off, the principal-portion form value is bound
-  // to the auto-calculated value. When it's on, the officer owns the value
-  // and we stop overwriting.
-  useEffect(() => {
-    if (overrideOn) return;
-    if (autoPrincipalDollars === null) return;
-    setValue("principalPortionDollars", autoPrincipalDollars, {
-      shouldDirty: false,
-      shouldValidate: false,
-    });
-  }, [autoPrincipalDollars, overrideOn, setValue]);
-
-  function toggleOverride() {
-    if (overrideOn) {
-      // Switching OFF: discard any officer-entered override, snap back to auto.
-      setOverrideOn(false);
-      if (autoPrincipalDollars !== null) {
-        setValue("principalPortionDollars", autoPrincipalDollars, {
-          shouldDirty: false,
-          shouldValidate: false,
-        });
-      }
-    } else {
-      // Switching ON: pre-populate with the current auto value so the input
-      // starts at the same number the officer was just looking at.
-      setOverrideOn(true);
-      if (autoPrincipalDollars !== null) {
-        setValue("principalPortionDollars", autoPrincipalDollars, {
-          shouldDirty: false,
-          shouldValidate: false,
-        });
-      }
-    }
-  }
-
   async function onSubmit(values: ScheduledPaymentFormParsed) {
     setSubmitError(null);
 
     const outstandingCents = dollarsToCents(values.outstandingDollars);
     const originalPrincipalCents = dollarsToCents(values.originalPrincipalDollars);
-    const principalPortionCents = dollarsToCents(values.principalPortionDollars);
+    const monthlyPaymentCents = dollarsToCents(values.monthlyPaymentDollars);
 
     try {
       const outputs = calculateScheduledPayment({
@@ -134,10 +76,10 @@ export function ModeBScheduledPayment({
         instalmentsAlreadyPaid: values.instalmentsAlreadyPaid,
         rateUnit: values.rateUnit,
         ratePercent: values.ratePercent,
+        monthlyPaymentCents,
         loanStartDate: parseYmdLocal(values.loanStartDate),
         lastPaymentDate: parseYmdLocal(values.lastPaymentDate),
         payOnDate: parseYmdLocal(values.payOnDate),
-        principalPortionCents,
       });
 
       const record: ScheduledPaymentRecord = {
@@ -154,15 +96,18 @@ export function ModeBScheduledPayment({
           outstandingCents,
           rateUnit: values.rateUnit,
           ratePercent: values.ratePercent,
+          monthlyPaymentCents,
           loanStartDate: values.loanStartDate,
           lastPaymentDate: values.lastPaymentDate,
           payOnDate: values.payOnDate,
-          principalPortionCents,
         },
         outputs: {
           days: outputs.days,
           dailyRate: outputs.dailyRate,
           monthlyRatePercent: outputs.monthlyRatePercent,
+          daysInScheduledMonth: outputs.daysInScheduledMonth,
+          prorationFactor: outputs.prorationFactor,
+          scheduledInterestCents: outputs.scheduledInterestCents,
           principalPortionCents: outputs.principalPortionCents,
           interestPortionCents: outputs.interestPortionCents,
           todayAmountCents: outputs.todayAmountCents,
@@ -195,7 +140,6 @@ export function ModeBScheduledPayment({
   function handleNewCalculation() {
     setResult(null);
     setSubmitError(null);
-    setOverrideOn(false);
     reset(defaultMobBValues());
   }
 
@@ -314,7 +258,7 @@ export function ModeBScheduledPayment({
                   inputMode="decimal"
                   step="0.01"
                   min="0"
-                  placeholder="e.g. 48"
+                  placeholder="e.g. 3.25"
                   {...register("ratePercent", { valueAsNumber: true })}
                 />
               </Field>
@@ -374,53 +318,22 @@ export function ModeBScheduledPayment({
             </div>
 
             <Field
-              label="Principal portion per instalment ($)"
-              htmlFor="principalPortionDollars"
-              error={errors.principalPortionDollars?.message}
+              label="Monthly payment amount ($)"
+              htmlFor="monthlyPaymentDollars"
+              error={errors.monthlyPaymentDollars?.message}
             >
-              {overrideOn ? (
-                <Input
-                  id="principalPortionDollars"
-                  type="number"
-                  inputMode="decimal"
-                  step="0.01"
-                  min="0"
-                  placeholder="0.00"
-                  {...register("principalPortionDollars", {
-                    valueAsNumber: true,
-                  })}
-                />
-              ) : (
-                <div
-                  id="principalPortionDollars"
-                  role="textbox"
-                  aria-readonly="true"
-                  className="flex h-9 w-full items-center gap-2 rounded-md border border-input bg-muted px-3 py-1 text-sm text-muted-foreground"
-                  title="Auto-calculated from loan principal and instalments. Click 'Advanced: override' below to edit."
-                >
-                  <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                  <span className="font-mono">
-                    {autoPrincipalDollars !== null
-                      ? `$${autoPrincipalDollars.toFixed(2)}`
-                      : "—"}
-                  </span>
-                </div>
-              )}
-              <button
-                type="button"
-                onClick={toggleOverride}
-                className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-              >
-                {overrideOn
-                  ? "Cancel override (use auto value)"
-                  : "Advanced: override auto-calculated value"}
-              </button>
-              {overrideOn ? (
-                <p className="text-xs text-destructive/90">
-                  Manual override active — make sure this matches the Note of
-                  Contract.
-                </p>
-              ) : null}
+              <Input
+                id="monthlyPaymentDollars"
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                min="0"
+                placeholder="0.00"
+                {...register("monthlyPaymentDollars", { valueAsNumber: true })}
+              />
+              <p className="text-xs text-muted-foreground">
+                From the CRM or Note of Contract.
+              </p>
             </Field>
 
             {submitError ? (
@@ -460,11 +373,11 @@ function defaultMobBValues(): ScheduledPaymentFormValues {
     totalInstalments: undefined,
     instalmentsAlreadyPaid: undefined,
     outstandingDollars: undefined,
-    rateUnit: "annual",
+    rateUnit: "monthly",
     ratePercent: undefined,
     lastPaymentDate: "",
     payOnDate: todayYmdLocal(),
-    principalPortionDollars: undefined,
+    monthlyPaymentDollars: undefined,
   };
 }
 
@@ -509,6 +422,15 @@ function Field({
   );
 }
 
+function formatProrationFactor(
+  daysSinceLastPayment: number,
+  daysInScheduledMonth: number,
+  factor: number,
+): string {
+  if (daysInScheduledMonth <= 0) return `${(factor * 100).toFixed(2)}%`;
+  return `${daysSinceLastPayment}/${daysInScheduledMonth} = ${(factor * 100).toFixed(2)}%`;
+}
+
 function ResultPanel({
   record,
   onPrint,
@@ -527,21 +449,33 @@ function ResultPanel({
       </CardHeader>
       <CardContent className="space-y-3">
         <ResultRow
-          label="Days elapsed (since last payment)"
-          value={String(outputs.days)}
+          label="Days since last payment"
+          value={`${outputs.days} of ${outputs.daysInScheduledMonth}`}
         />
         <ResultRow
-          label="Daily rate"
-          value={formatPercent(outputs.dailyRate, 6)}
+          label="Monthly rate"
+          value={`${outputs.monthlyRatePercent.toFixed(4)}%`}
         />
         <Separator />
         <ResultRow
-          label="Principal portion"
-          value={centsToDisplay(outputs.principalPortionCents)}
+          label="Scheduled monthly interest"
+          value={centsToDisplay(outputs.scheduledInterestCents)}
         />
         <ResultRow
-          label="Interest portion"
+          label="Proration factor"
+          value={formatProrationFactor(
+            outputs.days,
+            outputs.daysInScheduledMonth,
+            outputs.prorationFactor,
+          )}
+        />
+        <ResultRow
+          label="Prorated interest (today)"
           value={centsToDisplay(outputs.interestPortionCents)}
+        />
+        <ResultRow
+          label="Principal portion"
+          value={centsToDisplay(outputs.principalPortionCents)}
         />
         <Separator />
         <div className="flex items-baseline justify-between">
@@ -606,3 +540,4 @@ function ResultRow({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
