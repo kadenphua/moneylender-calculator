@@ -1,3 +1,4 @@
+import { ScheduleComparison } from "@/components/ScheduleComparison";
 import {
   centsToReceiptDisplay,
   formatPercent,
@@ -129,6 +130,10 @@ function ScheduledPaymentReceipt({
           label="Original loan principal"
           value={centsToReceiptDisplay(inputs.originalPrincipalCents)}
         />
+        <Row
+          label="Loan start date"
+          value={formatYmdReceipt(inputs.loanStartDate)}
+        />
         <Row label="Total instalments" value={String(inputs.totalInstalments)} />
         <Row
           label="Instalments already paid"
@@ -186,37 +191,17 @@ function ScheduledPaymentReceipt({
         />
       </div>
 
-      {outputs.remainingSchedule.length > 0 ? (
+      {outputs.originalSchedule.length > 0 ||
+      outputs.remainingSchedule.length > 0 ? (
         <>
-          <div className="mt-4 mb-2 text-sm font-semibold">
-            REMAINING SCHEDULE
+          <div className="mt-4">
+            <ScheduleComparison
+              originalSchedule={outputs.originalSchedule}
+              remainingSchedule={outputs.remainingSchedule}
+              instalmentsAlreadyPaid={inputs.instalmentsAlreadyPaid}
+              variant="receipt"
+            />
           </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-t border-b border-black">
-                <th className="text-left py-1">Due</th>
-                <th className="text-right py-1">Principal</th>
-                <th className="text-right py-1">Interest</th>
-                <th className="text-right py-1">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {outputs.remainingSchedule.map((r) => (
-                <tr key={r.rowNumber}>
-                  <td className="py-1 font-mono">{formatYmdReceipt(r.dueDate)}</td>
-                  <td className="py-1 text-right font-mono">
-                    {centsToReceiptDisplay(r.principalCents)}
-                  </td>
-                  <td className="py-1 text-right font-mono">
-                    {centsToReceiptDisplay(r.interestCents)}
-                  </td>
-                  <td className="py-1 text-right font-mono font-semibold">
-                    {centsToReceiptDisplay(r.totalCents)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
 
           <p className="mt-3 text-xs italic">
             Note: Schedule recalculated based on actual payment date.

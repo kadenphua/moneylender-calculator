@@ -92,6 +92,7 @@ export interface ScheduledPaymentInput {
   instalmentsAlreadyPaid: number;
   rateUnit: RateUnit;
   ratePercent: number;
+  loanStartDate: Date;
   lastPaymentDate: Date;
   payOnDate: Date;
   principalPortionCents: number;
@@ -110,6 +111,7 @@ export interface ScheduleRow {
 export interface ScheduledPaymentResult {
   days: number;
   dailyRate: number;
+  monthlyRatePercent: number;
   principalPortionCents: number;
   interestPortionCents: number;
   todayAmountCents: number;
@@ -117,6 +119,66 @@ export interface ScheduledPaymentResult {
   nextDueDate: Date;
   daysFromPayOnToNextDue: number;
   remainingSchedule: ScheduleRow[];
+  originalSchedule: ScheduleRow[];
+}
+
+export function generateOriginalSchedule(
+  originalPrincipalCents: number,
+  totalInstalments: number,
+  principalPortionCents: number,
+  monthlyRatePercent: number,
+  loanStartDate: Date,
+): ScheduleRow[] {
+  if (!Number.isInteger(originalPrincipalCents) || originalPrincipalCents <= 0) {
+    throw new Error(
+      `generateOriginalSchedule: originalPrincipalCents must be a positive integer, got ${originalPrincipalCents}`,
+    );
+  }
+  if (!Number.isInteger(totalInstalments) || totalInstalments < 1) {
+    throw new Error(
+      `generateOriginalSchedule: totalInstalments must be >= 1, got ${totalInstalments}`,
+    );
+  }
+  if (!Number.isInteger(principalPortionCents) || principalPortionCents <= 0) {
+    throw new Error(
+      `generateOriginalSchedule: principalPortionCents must be a positive integer, got ${principalPortionCents}`,
+    );
+  }
+  if (!Number.isFinite(monthlyRatePercent) || monthlyRatePercent < 0) {
+    throw new Error(
+      `generateOriginalSchedule: monthlyRatePercent must be a non-negative finite number, got ${monthlyRatePercent}`,
+    );
+  }
+
+  const rows: ScheduleRow[] = [];
+  for (let i = 1; i <= totalInstalments; i++) {
+    const isLast = i === totalInstalments;
+    const outstandingAtStartCents =
+      originalPrincipalCents - (i - 1) * principalPortionCents;
+    const interestCents = roundHalfUp(
+      (outstandingAtStartCents * monthlyRatePercent) / 100,
+    );
+    const principalCents = isLast
+      ? outstandingAtStartCents
+      : principalPortionCents;
+    const totalCents = principalCents + interestCents;
+    const outstandingAfterRowCents = isLast
+      ? 0
+      : outstandingAtStartCents - principalCents;
+    const dueDate = addMonths(loanStartDate, i);
+    const prevDueDate = addMonths(loanStartDate, i - 1);
+    rows.push({
+      rowNumber: i,
+      dueDate,
+      daysInPeriod: differenceInCalendarDays(dueDate, prevDueDate),
+      principalCents,
+      interestCents,
+      totalCents,
+      outstandingAfterRowCents,
+    });
+  }
+
+  return rows;
 }
 
 export function autoPrincipalPortionCents(
@@ -146,6 +208,7 @@ export function calculateScheduledPayment(
     instalmentsAlreadyPaid,
     rateUnit,
     ratePercent,
+    loanStartDate,
     lastPaymentDate,
     payOnDate,
     principalPortionCents,
@@ -193,6 +256,9 @@ export function calculateScheduledPayment(
       `calculateScheduledPayment: principalPortionCents (${principalPortionCents}) must be <= outstandingCents (${outstandingCents})`,
     );
   }
+  if (differenceInCalendarDays(lastPaymentDate, loanStartDate) < 0) {
+    throw new Error("Last payment date cannot be before loan start date.");
+  }
 
   // Lateness check: today's scheduled instalment is lastPaymentDate + 1 month.
   // payOnDate > that date => late => refuse and route officer to legacy CRM.
@@ -212,6 +278,8 @@ export function calculateScheduledPayment(
     rateUnit === "annual"
       ? annualToDaily(ratePercent)
       : monthlyToDaily(ratePercent);
+  const monthlyRatePercent =
+    rateUnit === "annual" ? ratePercent / 12 : ratePercent;
   const interestPortionCents = roundHalfUp(
     outstandingCents * dailyRate * days,
   );
@@ -265,9 +333,18 @@ export function calculateScheduledPayment(
     prevDueDate = dueDate;
   }
 
+  const originalSchedule = generateOriginalSchedule(
+    originalPrincipalCents,
+    totalInstalments,
+    principalPortionCents,
+    monthlyRatePercent,
+    loanStartDate,
+  );
+
   return {
     days,
     dailyRate,
+    monthlyRatePercent,
     principalPortionCents,
     interestPortionCents,
     todayAmountCents,
@@ -275,6 +352,7 @@ export function calculateScheduledPayment(
     nextDueDate: firstFutureDueDate,
     daysFromPayOnToNextDue,
     remainingSchedule,
+    originalSchedule,
   };
 }
 

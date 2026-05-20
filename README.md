@@ -50,9 +50,11 @@ served from any static host, or opened as a local file (some browsers
 restrict IndexedDB on `file://`; if you need true offline-file usage,
 prefer a tiny local server).
 
-When the new build first loads in a browser that already has Stage 1
-history, the IndexedDB schema migrates automatically from v1 to v2
-(every existing record is backfilled with `mode = "fullSettlement"`).
+When the new build first loads in a browser that already has older
+history, the IndexedDB schema migrates automatically:
+- v1 → v2: legacy records are backfilled with `mode = "fullSettlement"`.
+- v2 → v3: legacy scheduled records gain a `loanStartDate` (defaulted to
+  `lastPaymentDate`) and an empty `originalSchedule`.
 No officer action required.
 
 ## What's in the box
@@ -64,26 +66,37 @@ No officer action required.
     date, optional outstanding late fee. Result shows days, daily rate,
     interest accrued, late fee (if any), large TOTAL TO PAY.
   - **Scheduled Payment / Early (Mode B):** borrower ref, original loan
-    principal, total instalments, instalments already paid, outstanding
-    principal as of last payment, rate + unit, **last payment date (or the
-    loan start date if no payments have been made yet)**, pay-on date,
-    principal portion per instalment. For a brand-new loan with
-    `instalmentsAlreadyPaid = 0`, put the disbursement / loan start date
-    in the "last payment date" field — mathematically that's the correct
-    anchor for interest to accrue from. The principal-portion field
-    auto-fills from `original / total` and shows a `(auto: $X.XX —
-    change if rounding differs)` hint; the officer can override. Result
-    shows today's principal + interest + TODAY'S AMOUNT, new outstanding,
-    next scheduled due date, days from today to next due date, and the
-    full remaining schedule table.
-- **Print Receipt**: hits the browser's native print dialog. Receipt
-  uses `S$` for clarity and includes a short receipt ID, officer name,
+    principal, **loan start date (required)**, total instalments,
+    instalments already paid, outstanding principal as of last payment,
+    rate + unit, **last payment date (or the loan start date if no
+    payments have been made yet)**, pay-on date, principal portion per
+    instalment. For a brand-new loan with `instalmentsAlreadyPaid = 0`,
+    put the disbursement / loan start date in the "last payment date"
+    field as well — mathematically that's the correct anchor for interest
+    to accrue from. The principal-portion field auto-fills from
+    `original / total` and shows a `(auto: $X.XX — change if rounding
+    differs)` hint; the officer can override. Result shows today's
+    principal + interest + TODAY'S AMOUNT, new outstanding, next scheduled
+    due date, days from today to next due date, and two schedule tables
+    rendered side-by-side: the **Original Schedule** from the loan
+    agreement (with `✓` markers on paid rows and `← paying today` on the
+    instalment being paid this session) next to the **New Remaining
+    Schedule** recalculated from the actual pay-on date. When the actual
+    schedule costs less than the original future rows, a "Total saving
+    across remaining schedule: S$X.XX" summary line is shown beneath
+    the tables; otherwise it's hidden.
+- **Print Receipt**: hits the browser's native print dialog. Mode B
+  receipts print in **A4 landscape** so the Original / New comparison
+  fits side-by-side; Mode A receipts share the same page size. Both
+  use `S$` for clarity and include a short receipt ID, officer name,
   borrower ref, and either the settlement layout (Mode A) or the
-  scheduled-payment layout with remaining-schedule table (Mode B).
+  scheduled-payment layout with the side-by-side schedule comparison
+  and a "Schedule recalculated based on actual payment date." footer
+  note (Mode B).
 - **History** tab: every calculation auto-saves to IndexedDB. Mode is
   shown as a column; rows are clickable to expand into a full detail
-  dialog (including the schedule table for Mode B records). Searchable
-  by borrower ref, filterable by date range.
+  dialog (including both schedules side-by-side for Mode B records).
+  Searchable by borrower ref, filterable by date range.
 - **Settings** tab: edit officer name, edit company name (printed on
   receipt header), export full history as JSON, or clear history (two-step
   confirmation).
@@ -151,17 +164,19 @@ each one into the calculator UI and verify the on-screen total matches.
 ### Mode B — Scheduled Payment (Early / On-time)
 
 Shared inputs unless stated otherwise: original loan principal $6,000,
-total instalments 6, instalments already paid 2, outstanding principal
-$4,000.00, rate 48% per year, last payment 2026-02-01, principal portion
-$1,000.00.
+**loan start date 2025-12-01**, total instalments 6, instalments already
+paid 2, outstanding principal $4,000.00, rate 48% per year, last payment
+2026-02-01, principal portion $1,000.00.
 
 | #  | Variation                                | Pay-on date | Days | Interest portion | TODAY'S AMOUNT | New outstanding | Next due date | Days to next due | Notes |
 |----|------------------------------------------|-------------|------|------------------|----------------|-----------------|---------------|------------------|-------|
-| 8  | On-time payment                          | 2026-03-01  | 28   | $147.29          | **$1,147.29**  | $3,000.00       | 2026-04-01    | 31 days          | Remaining schedule: Apr 1 / May 1 / Jun 1; closes to $0 |
+| 8  | On-time payment                          | 2026-03-01  | 28   | $147.29          | **$1,147.29**  | $3,000.00       | 2026-04-01    | 31 days          | Remaining schedule: Apr 1 / May 1 / Jun 1; closes to $0. Original Schedule shows rows 1-2 ✓, row 3 "← paying today", rows 4-6 future. |
 | 9  | Same loan paid 7 days early              | 2026-02-22  | 21   | $110.47          | **$1,110.47**  | $3,000.00       | 2026-04-01    | 38 days          | **Policy X** — next due date does NOT shift. First remaining row covers 38 days, so its interest is higher than the on-time case's first remaining row. |
 | 10 | Same loan paid late                      | 2026-03-15  | —    | —                | —              | —               | —             | —                | **Refused.** Use the legacy CRM for late payments. |
 | 11 | Same loan but `instalmentsAlreadyPaid = 6` | 2026-03-01 | —    | —                | —              | —               | —             | —                | **Refused.** "All instalments already paid." |
-| 12 | $1,000 loan, 3 instalments, none paid yet, principal portion $333.33, pay-on 2026-02-01 (one month after 2026-01-01 last payment) | 2026-02-01 | 31 | $40.77 | **$374.10** | $666.67 | 2026-03-01 | 28 days | Auto principal $333.33 (33333¢) is short 1¢ over 3 rows. **Last remaining row's principal becomes $333.34** so today + 2 remaining rows sum to exactly $1,000 of principal. |
+| 12 | $1,000 loan, **loan start 2026-01-01**, 3 instalments, none paid yet, principal portion $333.33, pay-on 2026-02-01 (one month after 2026-01-01 last payment) | 2026-02-01 | 31 | $40.77 | **$374.10** | $666.67 | 2026-03-01 | 28 days | Auto principal $333.33 (33333¢) is short 1¢ over 3 rows. **Last remaining row's principal becomes $333.34** so today + 2 remaining rows sum to exactly $1,000 of principal. |
+| 13 | Validation: loan start date **after** last payment date (e.g. loan start 2026-03-01, last payment 2026-02-01) | — | — | — | — | — | — | — | **Refused** with "Last payment date cannot be before loan start date." |
+| 14 | `generateOriginalSchedule($6,000, 6 instalments, $1,000 principal, 4% monthly, loan-start any date)` | — | — | — | — | — | — | — | Canonical agreement schedule: 6 rows, principal $1,000 each, interest $240 / $200 / $160 / $120 / $80 / $40, totals $1,240 / $1,200 / $1,160 / $1,120 / $1,080 / $1,040. Sum of all principals = exactly $6,000. |
 
 ## ⚠️ Before deploying to the team
 
@@ -171,6 +186,12 @@ this calculator. If any differ by more than 1 cent, **do not deploy until
 investigated**. The test values above prove the engine matches the spec
 this tool was built against; they do not prove the spec matches the Note
 of Contract for every borrower. Independent verification is mandatory.
+
+**Also verify that the calculator's Original Schedule for one real
+borrower matches the schedule on their Note of Contract to the cent.**
+If they differ, the Note of Contract is generated with a different
+convention and the schedule generator needs investigation before
+deploying.
 
 Reminder: **late payments must continue to be routed through the legacy
 CRM.** This calculator deliberately refuses them in Mode B.
@@ -189,9 +210,9 @@ CRM.** This calculator deliberately refuses them in Mode B.
 src/
 ├── lib/
 │   ├── calc.ts        ← pure engine (no React, lift-ready for CRM)
-│   ├── calc.test.ts   ← 12 acceptance tests (7 Mode A + 5 Mode B)
+│   ├── calc.test.ts   ← 14 acceptance tests (7 Mode A + 7 Mode B)
 │   ├── format.ts      ← S$ formatter, date helpers, Asia/Singapore
-│   ├── db.ts          ← IndexedDB wrapper, v1→v2 mode-field migration
+│   ├── db.ts          ← IndexedDB wrapper, v1→v2 mode, v2→v3 loanStartDate
 │   ├── schema.ts      ← zod form schemas (Mode A + Mode B)
 │   ├── types.ts       ← CalculationRecord discriminated union
 │   └── utils.ts       ← cn() (shadcn)
@@ -200,7 +221,8 @@ src/
 └── components/
     ├── Calculator.tsx              ← mode selector wrapper
     ├── ModeAFullSettlement.tsx     ← Mode A form + result panel
-    ├── ModeBScheduledPayment.tsx   ← Mode B form + result panel + schedule
+    ├── ModeBScheduledPayment.tsx   ← Mode B form + result panel
+    ├── ScheduleComparison.tsx      ← side-by-side Original/New tables + savings
     ├── History.tsx                 ← mode column + per-mode detail dialog
     ├── Settings.tsx
     ├── OfficerNameModal.tsx

@@ -5,6 +5,7 @@ import {
   calculateFullSettlement,
   calculateScheduledPayment,
   centsToDisplay,
+  generateOriginalSchedule,
   LatePaymentError,
   roundHalfUp,
 } from "./calc";
@@ -155,6 +156,8 @@ describe("Scheduled Payment (Mode B) — acceptance tests", () => {
     instalmentsAlreadyPaid: 2,
     rateUnit: "annual" as const,
     ratePercent: 48,
+    // Two instalments paid before 2026-02-01 puts the loan start at 2025-12-01.
+    loanStartDate: d(2025, 12, 1),
     lastPaymentDate: d(2026, 2, 1),
     payOnDate: d(2026, 3, 1),
     principalPortionCents: 100000,
@@ -255,6 +258,8 @@ describe("Scheduled Payment (Mode B) — acceptance tests", () => {
       instalmentsAlreadyPaid: 0,
       rateUnit: "annual",
       ratePercent: 48,
+      // No payments made yet -> loan start IS the last-payment-date anchor.
+      loanStartDate: d(2026, 1, 1),
       lastPaymentDate: d(2026, 1, 1),
       payOnDate: d(2026, 2, 1),
       principalPortionCents: 33333,
@@ -270,5 +275,44 @@ describe("Scheduled Payment (Mode B) — acceptance tests", () => {
       result.principalPortionCents +
       result.remainingSchedule.reduce((s, r) => s + r.principalCents, 0);
     expect(totalPrincipal).toBe(100000);
+  });
+
+  it("TEST 13: lastPaymentDate before loanStartDate must throw", () => {
+    expect(() =>
+      calculateScheduledPayment({
+        ...baseTest8,
+        loanStartDate: d(2026, 3, 1),
+        lastPaymentDate: d(2026, 2, 1),
+      }),
+    ).toThrow(/Last payment date cannot be before loan start date/);
+  });
+
+  it("TEST 14: generateOriginalSchedule canonical $6,000 / 6 / 4% monthly", () => {
+    const schedule = generateOriginalSchedule(
+      600000,
+      6,
+      100000,
+      4,
+      d(2026, 1, 1),
+    );
+
+    expect(schedule).toHaveLength(6);
+
+    const expectedInterestCents = [24000, 20000, 16000, 12000, 8000, 4000];
+    const expectedTotalCents = [124000, 120000, 116000, 112000, 108000, 104000];
+
+    schedule.forEach((row, i) => {
+      expect(row.principalCents).toBe(100000);
+      expect(row.interestCents).toBe(expectedInterestCents[i]);
+      expect(row.totalCents).toBe(expectedTotalCents[i]);
+    });
+
+    const totalPrincipal = schedule.reduce(
+      (sum, row) => sum + row.principalCents,
+      0,
+    );
+    expect(totalPrincipal).toBe(600000);
+
+    expect(schedule[5].outstandingAfterRowCents).toBe(0);
   });
 });

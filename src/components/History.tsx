@@ -19,6 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+import { ScheduleComparison } from "@/components/ScheduleComparison";
 import { centsToDisplay } from "@/lib/calc";
 import {
   formatPercent,
@@ -248,6 +249,10 @@ function ScheduledPaymentDetail({
         value={centsToDisplay(inputs.originalPrincipalCents)}
       />
       <DetailRow
+        label="Loan start date"
+        value={formatYmdShort(inputs.loanStartDate)}
+      />
+      <DetailRow
         label="Total instalments"
         value={String(inputs.totalInstalments)}
       />
@@ -307,46 +312,15 @@ function ScheduledPaymentDetail({
         value={`${outputs.daysFromPayOnToNextDue} days`}
       />
 
-      {outputs.remainingSchedule.length > 0 ? (
+      {outputs.originalSchedule.length > 0 ||
+      outputs.remainingSchedule.length > 0 ? (
         <>
           <Separator />
-          <p className="text-sm font-semibold">
-            Remaining schedule ({outputs.remainingSchedule.length})
-          </p>
-          <div className="rounded-md border overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Due</TableHead>
-                  <TableHead className="text-right">Days</TableHead>
-                  <TableHead className="text-right">Principal</TableHead>
-                  <TableHead className="text-right">Interest</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {outputs.remainingSchedule.map((r) => (
-                  <TableRow key={r.rowNumber}>
-                    <TableCell className="font-mono text-xs">
-                      {formatYmdShort(r.dueDate)}
-                    </TableCell>
-                    <TableCell className="text-right font-mono">
-                      {r.daysInPeriod}
-                    </TableCell>
-                    <TableCell className="text-right font-mono">
-                      {centsToDisplay(r.principalCents)}
-                    </TableCell>
-                    <TableCell className="text-right font-mono">
-                      {centsToDisplay(r.interestCents)}
-                    </TableCell>
-                    <TableCell className="text-right font-mono font-semibold">
-                      {centsToDisplay(r.totalCents)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          <ScheduleComparison
+            originalSchedule={outputs.originalSchedule}
+            remainingSchedule={outputs.remainingSchedule}
+            instalmentsAlreadyPaid={inputs.instalmentsAlreadyPaid}
+          />
         </>
       ) : null}
     </div>

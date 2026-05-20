@@ -60,6 +60,7 @@ export const scheduledPaymentFormSchema = z
     instalmentsAlreadyPaid: requiredInt("Required").pipe(
       z.number().int().min(0, "Must be 0 or more"),
     ),
+    loanStartDate: ymd,
     outstandingDollars: requiredNumber().pipe(
       z.number().positive("Must be greater than 0"),
     ),
@@ -79,6 +80,10 @@ export const scheduledPaymentFormSchema = z
   .refine((d) => d.instalmentsAlreadyPaid < d.totalInstalments, {
     message: "Must be less than total instalments",
     path: ["instalmentsAlreadyPaid"],
+  })
+  .refine((d) => d.lastPaymentDate >= d.loanStartDate, {
+    message: "Last payment date cannot be before loan start date.",
+    path: ["lastPaymentDate"],
   })
   .refine((d) => d.payOnDate >= d.lastPaymentDate, {
     message: "Pay-on date must be on or after last payment date",

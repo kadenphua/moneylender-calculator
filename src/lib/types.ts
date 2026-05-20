@@ -26,6 +26,7 @@ export interface ScheduledPaymentInputsStored {
   outstandingCents: number;
   rateUnit: RateUnit;
   ratePercent: number;
+  loanStartDate: string;
   lastPaymentDate: string;
   payOnDate: string;
   principalPortionCents: number;
@@ -44,6 +45,7 @@ export interface ScheduleRowStored {
 export interface ScheduledPaymentOutputsStored {
   days: number;
   dailyRate: number;
+  monthlyRatePercent: number;
   principalPortionCents: number;
   interestPortionCents: number;
   todayAmountCents: number;
@@ -51,6 +53,7 @@ export interface ScheduledPaymentOutputsStored {
   nextDueDate: string;
   daysFromPayOnToNextDue: number;
   remainingSchedule: ScheduleRowStored[];
+  originalSchedule: ScheduleRowStored[];
 }
 
 interface RecordBase {

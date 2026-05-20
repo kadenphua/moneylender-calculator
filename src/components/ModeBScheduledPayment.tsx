@@ -9,14 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { ScheduleComparison } from "@/components/ScheduleComparison";
 
 import {
   AllInstalmentsPaidError,
@@ -115,6 +108,7 @@ export function ModeBScheduledPayment({
         instalmentsAlreadyPaid: values.instalmentsAlreadyPaid,
         rateUnit: values.rateUnit,
         ratePercent: values.ratePercent,
+        loanStartDate: parseYmdLocal(values.loanStartDate),
         lastPaymentDate: parseYmdLocal(values.lastPaymentDate),
         payOnDate: parseYmdLocal(values.payOnDate),
         principalPortionCents,
@@ -134,6 +128,7 @@ export function ModeBScheduledPayment({
           outstandingCents,
           rateUnit: values.rateUnit,
           ratePercent: values.ratePercent,
+          loanStartDate: values.loanStartDate,
           lastPaymentDate: values.lastPaymentDate,
           payOnDate: values.payOnDate,
           principalPortionCents,
@@ -141,6 +136,7 @@ export function ModeBScheduledPayment({
         outputs: {
           days: outputs.days,
           dailyRate: outputs.dailyRate,
+          monthlyRatePercent: outputs.monthlyRatePercent,
           principalPortionCents: outputs.principalPortionCents,
           interestPortionCents: outputs.interestPortionCents,
           todayAmountCents: outputs.todayAmountCents,
@@ -148,6 +144,7 @@ export function ModeBScheduledPayment({
           nextDueDate: dateToYmdLocal(outputs.nextDueDate),
           daysFromPayOnToNextDue: outputs.daysFromPayOnToNextDue,
           remainingSchedule: outputs.remainingSchedule.map(serialiseRow),
+          originalSchedule: outputs.originalSchedule.map(serialiseRow),
         },
       };
 
@@ -196,7 +193,7 @@ export function ModeBScheduledPayment({
               />
             </Field>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Field
                 label="Original loan principal ($)"
                 htmlFor="originalPrincipalDollars"
@@ -214,6 +211,20 @@ export function ModeBScheduledPayment({
                   })}
                 />
               </Field>
+              <Field
+                label="Loan start date"
+                htmlFor="loanStartDate"
+                error={errors.loanStartDate?.message}
+              >
+                <Input
+                  id="loanStartDate"
+                  type="date"
+                  {...register("loanStartDate")}
+                />
+              </Field>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Field
                 label="Total instalments"
                 htmlFor="totalInstalments"
@@ -392,6 +403,7 @@ function defaultMobBValues(): ScheduledPaymentFormValues {
   return {
     borrowerRef: "",
     originalPrincipalDollars: undefined,
+    loanStartDate: "",
     totalInstalments: undefined,
     instalmentsAlreadyPaid: undefined,
     outstandingDollars: undefined,
@@ -499,47 +511,15 @@ function ResultPanel({
           value={`${outputs.daysFromPayOnToNextDue} days`}
         />
 
-        {outputs.remainingSchedule.length > 0 ? (
+        {outputs.originalSchedule.length > 0 ||
+        outputs.remainingSchedule.length > 0 ? (
           <>
             <Separator />
-            <p className="text-sm font-semibold">
-              Remaining schedule ({outputs.remainingSchedule.length}{" "}
-              instalment{outputs.remainingSchedule.length === 1 ? "" : "s"})
-            </p>
-            <div className="rounded-md border overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Due</TableHead>
-                    <TableHead className="text-right">Days</TableHead>
-                    <TableHead className="text-right">Principal</TableHead>
-                    <TableHead className="text-right">Interest</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {outputs.remainingSchedule.map((r) => (
-                    <TableRow key={r.rowNumber}>
-                      <TableCell className="font-mono text-xs">
-                        {formatYmdShort(r.dueDate)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {r.daysInPeriod}
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {centsToDisplay(r.principalCents)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {centsToDisplay(r.interestCents)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono font-semibold">
-                        {centsToDisplay(r.totalCents)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <ScheduleComparison
+              originalSchedule={outputs.originalSchedule}
+              remainingSchedule={outputs.remainingSchedule}
+              instalmentsAlreadyPaid={inputs.instalmentsAlreadyPaid}
+            />
           </>
         ) : null}
 
