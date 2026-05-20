@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  AllInstalmentsPaidError,
+  autoPrincipalPortionCents,
   calculateFullSettlement,
+  calculateScheduledPayment,
   centsToDisplay,
+  LatePaymentError,
   roundHalfUp,
 } from "./calc";
 
@@ -140,5 +144,131 @@ describe("Full Settlement — acceptance tests", () => {
         outstandingLateFeeCents: 0,
       }),
     ).toThrow(/before start/);
+  });
+});
+
+describe("Scheduled Payment (Mode B) — acceptance tests", () => {
+  const baseTest8 = {
+    outstandingCents: 400000,
+    originalPrincipalCents: 600000,
+    totalInstalments: 6,
+    instalmentsAlreadyPaid: 2,
+    rateUnit: "annual" as const,
+    ratePercent: 48,
+    lastPaymentDate: d(2026, 2, 1),
+    payOnDate: d(2026, 3, 1),
+    principalPortionCents: 100000,
+  };
+
+  it("TEST 8: scheduled on-time payment, even principal", () => {
+    expect(autoPrincipalPortionCents(600000, 6)).toBe(100000);
+
+    const result = calculateScheduledPayment(baseTest8);
+
+    expect(result.days).toBe(28);
+    expect(result.dailyRate).toBe(0.48 / 365);
+    // 400000 × 0.48/365 × 28 = 14728.7671...  →  roundHalfUp → 14729 cents
+    expect(result.interestPortionCents).toBe(14729);
+    expect(result.principalPortionCents).toBe(100000);
+    expect(result.todayAmountCents).toBe(114729);
+    expect(result.newOutstandingCents).toBe(300000);
+
+    expect(result.nextDueDate).toEqual(d(2026, 4, 1));
+    expect(result.daysFromPayOnToNextDue).toBe(31);
+
+    expect(result.remainingSchedule).toHaveLength(3);
+    const [r1, r2, r3] = result.remainingSchedule;
+    expect(r1.dueDate).toEqual(d(2026, 4, 1));
+    expect(r1.daysInPeriod).toBe(31);
+    expect(r1.principalCents).toBe(100000);
+    expect(r1.outstandingAfterRowCents).toBe(200000);
+    expect(r2.dueDate).toEqual(d(2026, 5, 1));
+    expect(r2.daysInPeriod).toBe(30);
+    expect(r2.outstandingAfterRowCents).toBe(100000);
+    expect(r3.dueDate).toEqual(d(2026, 6, 1));
+    expect(r3.daysInPeriod).toBe(31);
+    expect(r3.principalCents).toBe(100000);
+    expect(r3.outstandingAfterRowCents).toBe(0);
+  });
+
+  it("TEST 9: scheduled early payment — Policy X keeps next due date fixed", () => {
+    const onTime = calculateScheduledPayment(baseTest8);
+    const early = calculateScheduledPayment({
+      ...baseTest8,
+      payOnDate: d(2026, 2, 22),
+    });
+
+    expect(early.days).toBe(21);
+    expect(early.interestPortionCents).toBeLessThan(onTime.interestPortionCents);
+
+    // Policy X: next scheduled due date is UNCHANGED even though paid early.
+    expect(early.nextDueDate).toEqual(d(2026, 4, 1));
+    expect(early.daysFromPayOnToNextDue).toBe(38);
+
+    expect(early.remainingSchedule).toHaveLength(3);
+    const [firstEarly] = early.remainingSchedule;
+    const [firstOnTime] = onTime.remainingSchedule;
+    // First row covers the longer Feb 22 -> Apr 1 stretch (38 days), not 31.
+    expect(firstEarly.daysInPeriod).toBe(38);
+    expect(firstEarly.interestCents).toBeGreaterThan(firstOnTime.interestCents);
+  });
+
+  it("TEST 10: late payment is refused", () => {
+    expect(() =>
+      calculateScheduledPayment({
+        ...baseTest8,
+        payOnDate: d(2026, 3, 15),
+      }),
+    ).toThrow(LatePaymentError);
+    expect(() =>
+      calculateScheduledPayment({
+        ...baseTest8,
+        payOnDate: d(2026, 3, 15),
+      }),
+    ).toThrow(/legacy CRM/);
+  });
+
+  it("TEST 11: all instalments already paid is refused", () => {
+    expect(() =>
+      calculateScheduledPayment({
+        ...baseTest8,
+        instalmentsAlreadyPaid: 6,
+      }),
+    ).toThrow(AllInstalmentsPaidError);
+    expect(() =>
+      calculateScheduledPayment({
+        ...baseTest8,
+        instalmentsAlreadyPaid: 6,
+      }),
+    ).toThrow(/All instalments already paid/);
+  });
+
+  it("TEST 12: last row absorbs rounding remainder", () => {
+    // $1,000 / 3 instalments => auto principal 33333 cents, sum 99999 (short 1).
+    // Last row's principal must absorb the +1 to close at exactly 100000.
+    expect(autoPrincipalPortionCents(100000, 3)).toBe(33333);
+
+    const result = calculateScheduledPayment({
+      outstandingCents: 100000,
+      originalPrincipalCents: 100000,
+      totalInstalments: 3,
+      instalmentsAlreadyPaid: 0,
+      rateUnit: "annual",
+      ratePercent: 48,
+      lastPaymentDate: d(2026, 1, 1),
+      payOnDate: d(2026, 2, 1),
+      principalPortionCents: 33333,
+    });
+
+    expect(result.principalPortionCents).toBe(33333);
+    expect(result.remainingSchedule).toHaveLength(2);
+    expect(result.remainingSchedule[0].principalCents).toBe(33333);
+    expect(result.remainingSchedule[1].principalCents).toBe(33334);
+    expect(result.remainingSchedule[1].outstandingAfterRowCents).toBe(0);
+
+    const totalPrincipal =
+      result.principalPortionCents +
+      result.remainingSchedule.reduce((s, r) => s + r.principalCents, 0);
+    expect(totalPrincipal).toBe(100000);
   });
 });
