@@ -1,110 +1,37 @@
-Change the Principal portion field on Mode B from editable to
-read-only, with an "Advanced: override" toggle that reveals editing
-when the officer explicitly needs it.
-
-CURRENT BEHAVIOUR
-- Field is always editable.
-- Auto-populates from (originalPrincipal × 100 / totalInstalments)
-  rounded half-up to cents.
-- Stops auto-overwriting once the officer manually edits it (via RHF
-  dirtyFields).
-
-NEW BEHAVIOUR
-
-1. The field becomes READ-ONLY by default. It still auto-populates
-   from (originalPrincipal × 100 / totalInstalments). Display the
-   value as a static styled number, not an input.
-
-2. Add a small toggle / link below the field: "Advanced: override
-   auto-calculated value". When clicked, reveals an editable input
-   pre-populated with the current auto value.
-
-3. When the toggle is in "override" mode, the field accepts officer
-   input. When toggled off (the default), it reverts to the auto
-   value and ignores any previously-entered override.
-
-4. The form submission uses whichever value is currently in effect
-   (auto if toggle is off, override if toggle is on).
-
-5. If the officer changes originalPrincipal or totalInstalments
-   while the override toggle is OFF, the displayed auto value
-   updates immediately. If the toggle is ON, the override value
-   stays untouched (officer has explicitly taken control).
-
-6. Visual styling for the read-only display: same neutral background
-   as a disabled input, but with a small icon (lucide-react `Lock`
-   or `Info`) hinting why it's not editable. Hover tooltip:
-   "Auto-calculated from loan principal and instalments. Click
-   'Advanced: override' below to edit."
-
-7. The "Advanced: override" link styled small, less prominent than
-   the form's main labels — it's the rarely-used escape hatch, not
-   a primary field.
-
-8. When the override toggle is ON, add a small warning text below
-   the field in muted red:
-   "Manual override active — make sure this matches the Note of
-   Contract."
-
-9. Remove the existing "(auto: $X.XX — change if rounding differs)"
-   hint text since the new UI makes the auto behaviour obvious.
-
-10. No changes to:
-    - calc.ts engine (still receives principalPortionCents as a
-      number, regardless of how the UI produced it)
-    - Tests (the engine doesn't care about UI)
-    - Schema (zod still validates principalPortionDollars >= 0 etc.)
-    - Records stored in IndexedDB (no schema change, no migration)
-
-11. Run pnpm test to confirm all 14 tests still pass after the
-    UI refactor.
-
-12. Run pnpm build to confirm typecheck + production build clean.
-
-13. Commit with a clear message.
-
-Add the Principal column back to both schedule tables (Original
-Schedule and New Remaining Schedule).
+Swap the order of the two modes in the Mode selector and change
+the default loaded mode.
 
 CURRENT
-Both tables in src/components/ScheduleComparison.tsx render 3 columns:
-Due / Interest / Total.
+- Mode selector shows: [ Full Settlement ] [ Scheduled Payment (Early) ]
+- Default loaded on first open: Full Settlement (Mode A)
 
 NEW
-Both tables render 4 columns: Due / Principal / Interest / Total.
+- Mode selector shows: [ Scheduled Payment (Early) ] [ Full Settlement ]
+- Default loaded on first open: Scheduled Payment (Mode B)
 
 DETAILS
 
-1. Update ScheduleComparison.tsx — add the Principal column to both
-   the screen variant and the receipt variant. Order: Due, Principal,
-   Interest, Total. Principal column right-aligned and font-mono,
-   matching the other numeric columns.
+1. In src/components/Calculator.tsx, swap the order of the two buttons
+   in the mode selector so Scheduled Payment is on the left.
 
-2. The principal cell uses centsToDisplay for the screen variant
-   and centsToReceiptDisplay (S$) for the receipt variant.
+2. Change the initial useState for the active mode from
+   'fullSettlement' to 'scheduled', so Mode B loads by default
+   when the page first opens.
 
-3. For paid past rows in the Original Schedule (the ones marked ✓),
-   show the principal value as normal — they're dimmed but the value
-   is still visible.
+3. Do NOT rename either button. Labels stay as-is.
 
-4. For the "← paying today" row in the Original Schedule, show the
-   principal value as normal.
+4. Do NOT change anything in calc.ts, schema.ts, types.ts, or db.ts
+   — this is a UI-only change.
 
-5. Print CSS — the comparison still needs to fit in A4 landscape.
-   Two 4-column tables side-by-side should still fit with the current
-   1.2cm margins and 10pt font, but verify by:
-   - Run pnpm build
-   - If the build is clean, that's all we can verify without a real
-     browser. Note in the commit that visual print preview verification
-     is on the user.
+5. Do NOT change the History tab, Settings tab, or PrintReceipt
+   component. The mode is determined per-calculation; only the
+   default starting mode on the Calculator tab changes.
 
-6. No engine changes (calc.ts unchanged). No schema changes. No test
-   changes (existing 14 tests still pass).
+6. Run pnpm test — all 14 tests must still pass.
 
-7. Run pnpm test and pnpm build before committing.
+7. Run pnpm build — must be clean.
 
-8. Commit with message "ui: restore Principal column in both schedule
-   tables" and push to GitHub so Vercel auto-deploys.
+8. Commit with message:
+   "ui: default Mode B on open, swap mode selector order"
 
-Push the commit to GitHub after — `git push` — so Vercel auto-deploys
-the change to the live URL.
+9. Push to GitHub so Vercel auto-deploys.

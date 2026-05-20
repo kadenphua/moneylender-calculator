@@ -16,7 +16,7 @@ export function Calculator({
   companyName,
   onCalculation,
 }: Props) {
-  const [mode, setMode] = useState<CalculationMode>("fullSettlement");
+  const [mode, setMode] = useState<CalculationMode>("scheduled");
 
   return (
     <div className="space-y-6">
@@ -28,17 +28,17 @@ export function Calculator({
         >
           <button
             type="button"
-            className={modeButtonClass(mode === "fullSettlement")}
-            onClick={() => setMode("fullSettlement")}
-          >
-            Full Settlement
-          </button>
-          <button
-            type="button"
             className={modeButtonClass(mode === "scheduled")}
             onClick={() => setMode("scheduled")}
           >
             Scheduled Payment (Early)
+          </button>
+          <button
+            type="button"
+            className={modeButtonClass(mode === "fullSettlement")}
+            onClick={() => setMode("fullSettlement")}
+          >
+            Full Settlement
           </button>
         </div>
       </div>
