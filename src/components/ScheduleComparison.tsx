@@ -128,6 +128,7 @@ function ScheduleTable({
             }
           >
             <th className="text-left px-2 py-1.5">Due</th>
+            <th className="text-right px-2 py-1.5">Principal</th>
             <th className="text-right px-2 py-1.5">Interest</th>
             <th className="text-right px-2 py-1.5">Total</th>
           </tr>
@@ -155,6 +156,9 @@ function ScheduleTable({
                       ← paying today
                     </span>
                   ) : null}
+                </td>
+                <td className="px-2 py-1 text-right font-mono">
+                  {formatMoney(row.principalCents)}
                 </td>
                 <td className="px-2 py-1 text-right font-mono">
                   {formatMoney(row.interestCents)}
