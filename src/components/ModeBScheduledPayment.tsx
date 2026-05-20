@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { v4 as uuidv4 } from "uuid";
-import { AlertCircle, Printer, RotateCcw } from "lucide-react";
+import { AlertCircle, Lock, Printer, RotateCcw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -51,6 +51,7 @@ export function ModeBScheduledPayment({
 }: Props) {
   const [result, setResult] = useState<ScheduledPaymentRecord | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [overrideOn, setOverrideOn] = useState(false);
 
   const {
     register,
@@ -59,7 +60,7 @@ export function ModeBScheduledPayment({
     control,
     watch,
     setValue,
-    formState: { errors, dirtyFields, isSubmitting },
+    formState: { errors, isSubmitting },
   } = useForm<ScheduledPaymentFormValues, unknown, ScheduledPaymentFormParsed>({
     resolver: zodResolver(scheduledPaymentFormSchema),
     defaultValues: defaultMobBValues(),
@@ -83,15 +84,40 @@ export function ModeBScheduledPayment({
     return autoPrincipalPortionCents(dollarsToCents(o), t) / 100;
   }, [watchedOriginal, watchedTotal]);
 
-  // Auto-fill principal portion unless the officer has manually edited it.
+  // When the override toggle is off, the principal-portion form value is bound
+  // to the auto-calculated value. When it's on, the officer owns the value
+  // and we stop overwriting.
   useEffect(() => {
+    if (overrideOn) return;
     if (autoPrincipalDollars === null) return;
-    if (dirtyFields.principalPortionDollars) return;
     setValue("principalPortionDollars", autoPrincipalDollars, {
       shouldDirty: false,
       shouldValidate: false,
     });
-  }, [autoPrincipalDollars, dirtyFields.principalPortionDollars, setValue]);
+  }, [autoPrincipalDollars, overrideOn, setValue]);
+
+  function toggleOverride() {
+    if (overrideOn) {
+      // Switching OFF: discard any officer-entered override, snap back to auto.
+      setOverrideOn(false);
+      if (autoPrincipalDollars !== null) {
+        setValue("principalPortionDollars", autoPrincipalDollars, {
+          shouldDirty: false,
+          shouldValidate: false,
+        });
+      }
+    } else {
+      // Switching ON: pre-populate with the current auto value so the input
+      // starts at the same number the officer was just looking at.
+      setOverrideOn(true);
+      if (autoPrincipalDollars !== null) {
+        setValue("principalPortionDollars", autoPrincipalDollars, {
+          shouldDirty: false,
+          shouldValidate: false,
+        });
+      }
+    }
+  }
 
   async function onSubmit(values: ScheduledPaymentFormParsed) {
     setSubmitError(null);
@@ -169,6 +195,7 @@ export function ModeBScheduledPayment({
   function handleNewCalculation() {
     setResult(null);
     setSubmitError(null);
+    setOverrideOn(false);
     reset(defaultMobBValues());
   }
 
@@ -351,21 +378,47 @@ export function ModeBScheduledPayment({
               htmlFor="principalPortionDollars"
               error={errors.principalPortionDollars?.message}
             >
-              <Input
-                id="principalPortionDollars"
-                type="number"
-                inputMode="decimal"
-                step="0.01"
-                min="0"
-                placeholder="0.00"
-                {...register("principalPortionDollars", {
-                  valueAsNumber: true,
-                })}
-              />
-              {autoPrincipalDollars !== null ? (
-                <p className="text-xs text-muted-foreground">
-                  (auto: ${autoPrincipalDollars.toFixed(2)} — change if rounding
-                  differs)
+              {overrideOn ? (
+                <Input
+                  id="principalPortionDollars"
+                  type="number"
+                  inputMode="decimal"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  {...register("principalPortionDollars", {
+                    valueAsNumber: true,
+                  })}
+                />
+              ) : (
+                <div
+                  id="principalPortionDollars"
+                  role="textbox"
+                  aria-readonly="true"
+                  className="flex h-9 w-full items-center gap-2 rounded-md border border-input bg-muted px-3 py-1 text-sm text-muted-foreground"
+                  title="Auto-calculated from loan principal and instalments. Click 'Advanced: override' below to edit."
+                >
+                  <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <span className="font-mono">
+                    {autoPrincipalDollars !== null
+                      ? `$${autoPrincipalDollars.toFixed(2)}`
+                      : "—"}
+                  </span>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={toggleOverride}
+                className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+              >
+                {overrideOn
+                  ? "Cancel override (use auto value)"
+                  : "Advanced: override auto-calculated value"}
+              </button>
+              {overrideOn ? (
+                <p className="text-xs text-destructive/90">
+                  Manual override active — make sure this matches the Note of
+                  Contract.
                 </p>
               ) : null}
             </Field>
