@@ -298,16 +298,21 @@ export function calculateScheduledPayment(
     payOnDate,
   );
 
+  // Anchor each remaining-schedule row to loanStartDate (same anchoring as
+  // generateOriginalSchedule) so the two schedules never drift apart on
+  // end-of-month loans. daysInPeriod is still the calendar gap from the
+  // previous due date — or from payOnDate for row 0 — so interest is
+  // computed against the actual elapsed days.
   const remainingSchedule: ScheduleRow[] = [];
   let remainingOutstandingCents = newOutstandingCents;
-  let prevDueDate = firstFutureDueDate;
+  let prevDueDate: Date = payOnDate;
   for (let i = 0; i < remainingCount; i++) {
     const isLast = i === remainingCount - 1;
-    const dueDate = i === 0 ? firstFutureDueDate : addMonths(prevDueDate, 1);
-    const daysInPeriod =
-      i === 0
-        ? daysFromPayOnToNextDue
-        : differenceInCalendarDays(dueDate, prevDueDate);
+    const dueDate = addMonths(
+      loanStartDate,
+      instalmentsAlreadyPaid + 2 + i,
+    );
+    const daysInPeriod = differenceInCalendarDays(dueDate, prevDueDate);
     const interestCents = roundHalfUp(
       remainingOutstandingCents * dailyRate * daysInPeriod,
     );

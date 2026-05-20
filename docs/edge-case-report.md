@@ -1,6 +1,6 @@
 # Edge-case scenario report
 
-Generated 2026-05-20T09:18:45.567Z via `scripts/edge-cases.ts`.
+Generated 2026-05-20T09:31:56.604Z via `scripts/edge-cases.ts`.
 
 **Diagnostic only.** This report surfaces scenarios not covered by the 14 acceptance tests. Do **not** change production code based on findings here without an explicit follow-up decision.
 
@@ -50,12 +50,12 @@ New remaining schedule:
 ---------------------------------------------------------------------------
 1   | 2026-03-31 |   31 |  $1,000.00 |    $203.84 |  $1,203.84 |  $4,000.00
 2   | 2026-04-30 |   30 |  $1,000.00 |    $157.81 |  $1,157.81 |  $3,000.00
-3   | 2026-05-30 |   30 |  $1,000.00 |    $118.36 |  $1,118.36 |  $2,000.00
-4   | 2026-06-30 |   31 |  $1,000.00 |     $81.53 |  $1,081.53 |  $1,000.00
-5   | 2026-07-30 |   30 |  $1,000.00 |     $39.45 |  $1,039.45 |      $0.00
+3   | 2026-05-31 |   31 |  $1,000.00 |    $122.30 |  $1,122.30 |  $2,000.00
+4   | 2026-06-30 |   30 |  $1,000.00 |     $78.90 |  $1,078.90 |  $1,000.00
+5   | 2026-07-31 |   31 |  $1,000.00 |     $40.77 |  $1,040.77 |      $0.00
 ```
 
-**Verdict:** FLAG — New Remaining Schedule drifts off the Original Schedule's anchored dates. Mismatches — row 3: new=2026-05-30 vs original=2026-05-31; row 5: new=2026-07-30 vs original=2026-07-31.
+**Verdict:** OK — Both schedules align on every row.
 
 
 ## A2. Mode B original schedule — Jan 31 loan start, 6 instalments
@@ -365,7 +365,7 @@ daysFromPayOnToNextDue: 29
 
 ## Summary — flagged items
 
-- **A1**: New Remaining Schedule drifts off the Original Schedule's anchored dates. Mismatches — row 3: new=2026-05-30 vs original=2026-05-31; row 5: new=2026-07-30 vs original=2026-07-31.
+No flags. All scenarios behaved as expected within their spec.
 
 ---
 _End of report. Do not change production code based on these findings without an explicit follow-up._
