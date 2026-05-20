@@ -127,3 +127,23 @@
       sans-serif;
   }
 }
+
+@media print {
+  @page {
+    margin: 1.5cm;
+  }
+  html,
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  .print-receipt {
+    max-width: 720px;
+    margin: 0 auto;
+    color: black;
+    font-size: 12pt;
+  }
+  .print-receipt hr {
+    border-color: black;
+  }
+}
