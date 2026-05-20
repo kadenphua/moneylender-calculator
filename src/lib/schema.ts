@@ -81,10 +81,23 @@ export const scheduledPaymentFormSchema = z
       z.number().positive("Must be greater than 0"),
     ),
   })
-  .refine((d) => d.instalmentsAlreadyPaid < d.totalInstalments, {
-    message: "Must be less than total instalments",
-    path: ["instalmentsAlreadyPaid"],
-  })
+  .refine(
+    (d) => {
+      // Only meaningful when both numbers are present; otherwise the
+      // individual field's own "Required" error surfaces and this
+      // cross-check would point at the wrong field.
+      if (
+        typeof d.instalmentsAlreadyPaid !== "number" ||
+        typeof d.totalInstalments !== "number"
+      )
+        return true;
+      return d.instalmentsAlreadyPaid < d.totalInstalments;
+    },
+    {
+      message: "Must be less than total instalments",
+      path: ["instalmentsAlreadyPaid"],
+    },
+  )
   .superRefine((d, ctx) => {
     if (typeof d.instalmentsAlreadyPaid !== "number") return;
     if (d.instalmentsAlreadyPaid >= 1) {

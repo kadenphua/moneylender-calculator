@@ -42,7 +42,7 @@ export function ModeAFullSettlement({
     handleSubmit,
     reset,
     control,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isValid },
   } = useForm<CalculatorFormValues, unknown, CalculatorFormParsed>({
     resolver: zodResolver(calculatorFormSchema),
     defaultValues: {
@@ -54,6 +54,7 @@ export function ModeAFullSettlement({
       payOnDate: todayYmdLocal(),
       outstandingLateFeeDollars: 0,
     },
+    mode: "onChange",
   });
 
   async function onSubmit(values: CalculatorFormParsed) {
@@ -239,7 +240,7 @@ export function ModeAFullSettlement({
 
             <Button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || !isValid}
               className="w-full h-12 text-base font-semibold"
             >
               Calculate
