@@ -1,125 +1,67 @@
-TWO BUGS TO FIX IN MODE B FORM
+Show reciprocal rate beside the interest rate field on Mode B.
 
-BUG 1: Calculate button stays disabled with valid inputs
+When the officer enters a rate and selects a unit, display the
+equivalent in the other unit below the rate field as a small
+muted hint line.
 
-When instalmentsAlreadyPaid === 0, the "Last payment date" field
-is correctly hidden, but the Calculate button remains disabled
-even when all other fields are filled correctly.
+BEHAVIOUR
 
-DIAGNOSIS
+If rateUnit === 'annual' and ratePercent is a positive number:
+  Display: "= [X.XX]% per month"
+  where X.XX = ratePercent / 12, rounded to 2 decimal places.
 
-The likely cause: the zod schema still validates lastPaymentDate
-as required, but the UI hides the field. Form-level validation
-fails silently (no visible error message because no field is
-rendered to show it against), and react-hook-form keeps the
-Calculate button disabled.
+If rateUnit === 'monthly' and ratePercent is a positive number:
+  Display: "= [X.XX]% per year"
+  where X.XX = ratePercent × 12, rounded to 2 decimal places.
 
-FIX
+If ratePercent is empty, 0, or invalid, display nothing.
 
-Update src/lib/schema.ts so that when instalmentsAlreadyPaid === 0:
-- lastPaymentDate is OPTIONAL (zod superRefine, not required)
-- The form's submit handler is the place that substitutes
-  loanStartDate for lastPaymentDate when paid=0
+DO NOT auto-convert the entered number when the unit toggle
+changes. The number the officer typed stays as-is. Only the
+reciprocal display updates.
 
-When instalmentsAlreadyPaid >= 1:
-- lastPaymentDate is REQUIRED as before
-- The refinement `lastPaymentDate >= loanStartDate` still applies
+VISUAL
 
-Make sure react-hook-form's `mode: 'onChange'` is set (or
-'onBlur') so the form re-validates immediately when
-instalmentsAlreadyPaid changes from blank to 0 to a positive
-integer. This way the button enables/disables responsively.
+Same style as the existing field hints (e.g. "From the CRM or
+Note of Contract" under the monthly payment field, "Schedule
+says..." under outstanding). Small text, muted color, sits
+directly below the rate input.
 
-After the fix, verify in the dev server:
-- Set paid=0, fill all other fields, button should be ACTIVE.
-- Set paid=2, leave lastPaymentDate blank, button should be
-  DISABLED with a visible "Required" error on the
-  lastPaymentDate field.
-- Set paid=2, fill lastPaymentDate, button should be ACTIVE.
+Example placement:
+  Interest rate (%)               Unit
+  [ 39             ]              [ Per month ] [ Per year ]
+  = 3.25% per month               ← THIS LINE IS NEW
 
-BUG 2: Outstanding field is editable and shows redundant hint
-when paid = 0
+NO OTHER CHANGES
 
-When instalmentsAlreadyPaid === 0, the borrower has by definition
-made no payments, so the current outstanding always equals the
-loan amount. The officer typing the same number in twice is
-busywork, and the "Schedule says: $5,000.00" hint is redundant.
-
-FIX
-
-In src/components/ModeBScheduledPayment.tsx, when
-instalmentsAlreadyPaid === 0:
-- The "Current outstanding ($)" input becomes READ-ONLY
-- Its value is auto-set to whatever loan amount is currently
-  entered, watched reactively (if loan amount changes from
-  $5,000 to $6,000, the outstanding field auto-updates to $6,000)
-- The cross-reference hint ("Schedule says: ...") is HIDDEN
-- Style the field with the same disabled/read-only appearance as
-  the monthly payment field has when read-only
-
-When instalmentsAlreadyPaid >= 1:
-- The field is editable as today
-- The cross-reference hint reappears
-
-Add a small visual cue when the field is auto-set: muted text
-below the field saying "Auto-filled — no payments made yet."
-
-VERIFY VALIDATION SCHEMA IS CONSISTENT WITH THIS BEHAVIOUR
-
-If the schema validates that outstanding > 0 and <= loan amount,
-that should still pass when outstanding === loan amount (since
-loan amount is required to be > 0).
+- Engine math is unaffected. The rate conversion is handled by
+  calc.ts's annualToDaily / monthlyToDaily helpers already.
+- No new dependencies.
+- Mode A is unaffected (it has the same rate input, but for
+  this commit only update Mode B; we can mirror to Mode A
+  separately).
+- Schema is unaffected.
+- Tests are unaffected.
 
 STEPS
 
-1. Update src/lib/schema.ts:
-   - lastPaymentDate conditional via superRefine on
-     instalmentsAlreadyPaid
-   - existing refinements stay intact
+1. Update src/components/ModeBScheduledPayment.tsx:
+   - Watch ratePercent and rateUnit
+   - Compute the reciprocal value with simple JS
+   - Render the muted hint line below the rate input
 
-2. Update src/components/ModeBScheduledPayment.tsx:
-   - Add watched value for instalmentsAlreadyPaid
-   - When 0, make outstanding read-only and auto-track loan amount
-   - When 0, hide the cross-reference hint
-   - When >=1, make outstanding editable and show hint as today
-   - Add the "Auto-filled — no payments made yet." muted text
+2. Run pnpm test, pnpm build.
 
-3. Run pnpm test — all 14 tests must still pass.
+3. Commit:
+   "ui(modeB): show reciprocal interest rate beside input"
 
-4. Run pnpm build — clean.
+4. Push to GitHub.
 
-5. Verify in dev server:
-   a. paid=0 + all other fields → Calculate button ACTIVE
-   b. paid=2 + lastPaymentDate empty → button DISABLED, visible
-      error on lastPaymentDate
-   c. paid=2 + lastPaymentDate filled → button ACTIVE
-   d. Setting outstanding while paid=0 should be impossible (field
-      is read-only)
-   e. Changing loan amount while paid=0 should auto-update
-      outstanding
+VERIFY ON DEV SERVER BEFORE COMMITTING
 
-6. Commit with message:
-   "fix(ui): enable Calculate when paid=0; auto-fill outstanding
-    for new loans"
-
-7. Push to GitHub for Vercel auto-deploy.
-
-ALSO — DOUBLE-CHECK FOR OTHER FORM VALIDATION BUGS
-
-While in the schema and form code, look for any other field that
-might be silently failing validation:
-- Loan start date format
-- Today's date / pay-on date defaults
-- Rate field handling 0% or empty
-- Monthly payment field handling
-
-Report anything you find that looks suspicious. If you spot a bug
-that wasn't asked for, flag it and ask before fixing — don't
-spontaneously change behaviour.
-
-STOPPING POINT
-
-Report after the commit and push. Include:
-- The commit hash
-- A list of test scenarios verified
-- Any other validation issue you noticed
+- "Per year" + 39 → shows "= 3.25% per month"
+- "Per month" + 3.25 → shows "= 39% per year"
+- Empty rate → no hint
+- 0 rate → no hint
+- Switching unit while rate is entered: number stays, hint
+  updates to reflect new interpretation
