@@ -21,6 +21,9 @@ describe("daysBetween — actual calendar days", () => {
   it("counts a 31-day calendar month as 31 (NOT 30)", () => {
     expect(daysBetween(d(2026, 5, 21), d(2026, 6, 21))).toBe(31);
   });
+  it("counts February as 28 days (2026 is not a leap year)", () => {
+    expect(daysBetween(d(2026, 2, 1), d(2026, 3, 1))).toBe(28);
+  });
   it("throws when pay-on is before the last payment date", () => {
     expect(() => daysBetween(d(2026, 5, 21), d(2026, 4, 21))).toThrow(
       /before the last payment date/,

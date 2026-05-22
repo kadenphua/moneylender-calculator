@@ -108,10 +108,9 @@ No officer action required.
   `daysBetween` (`differenceInCalendarDays`) — a 31-day calendar month counts
   31, a 30-day month counts 30. Combined with the **`/365`** divisor this
   matches how the real loan ledgers accrue interest.
-  > **Note — do not "fix" this back to 30/360 ÷360.** A 30/360 ÷360 method was
-  > tried (commit 0d5435d) and reverted: it did **not** match the real loan
-  > ledgers. **Actual calendar days with a /365 divisor is the correct method.**
-  > Any earlier note claiming "30/360 is intentional" is obsolete.
+  > **Interest uses ACTUAL calendar days ÷ 365. The earlier 30/360 ÷360 method
+  > (commit 0d5435d) was incorrect and has been reverted. Do not re-introduce
+  > /360.** Any earlier note claiming "30/360 is intentional" is obsolete.
 - **Rounding:** all intermediate math in integer cents. Final display
   rounded half-up (not banker's). Implemented as
   `Math.sign(x) * Math.floor(Math.abs(x) + 0.5)`.
