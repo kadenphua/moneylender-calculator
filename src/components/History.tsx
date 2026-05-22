@@ -19,7 +19,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-import { ScheduleComparison } from "@/components/ScheduleComparison";
 import { centsToDisplay } from "@/lib/calc";
 import {
   formatPercent,
@@ -245,47 +244,20 @@ function ScheduledPaymentDetail({
       <DetailRow label="Borrower ref" value={inputs.borrowerRef || "—"} />
       <Separator />
       <DetailRow
-        label="Original principal"
-        value={centsToDisplay(inputs.originalPrincipalCents)}
-      />
-      <DetailRow
-        label="Loan start date"
-        value={formatYmdShort(inputs.loanStartDate)}
-      />
-      <DetailRow
-        label="Total instalments"
-        value={String(inputs.totalInstalments)}
-      />
-      <DetailRow
-        label="Already paid"
-        value={String(inputs.instalmentsAlreadyPaid)}
-      />
-      <DetailRow
         label="Outstanding principal"
         value={centsToDisplay(inputs.outstandingCents)}
+      />
+      <DetailRow
+        label="Interest rate"
+        value={`${inputs.annualRatePercent}% per year`}
       />
       <DetailRow
         label="Monthly payment"
         value={centsToDisplay(inputs.monthlyPaymentCents)}
       />
       <DetailRow
-        label="Interest rate"
-        value={`${inputs.ratePercent}% ${
-          inputs.rateUnit === "annual" ? "per year" : "per month"
-        }`}
-      />
-      <DetailRow
-        label="Monthly rate (derived)"
-        value={`${outputs.monthlyRatePercent.toFixed(4)}%`}
-      />
-      <DetailRow
         label="Last payment"
-        value={
-          formatYmdShort(inputs.lastPaymentDate) +
-          (inputs.lastPaymentDate === inputs.loanStartDate
-            ? " (= loan start date)"
-            : "")
-        }
+        value={formatYmdShort(inputs.lastPaymentDate)}
       />
       <DetailRow
         label="Pay-on date"
@@ -294,23 +266,15 @@ function ScheduledPaymentDetail({
       <Separator />
       <DetailRow
         label="Days since last payment"
-        value={`${outputs.days} of ${outputs.daysInScheduledMonth}`}
+        value={String(outputs.days)}
       />
       <DetailRow
-        label="Scheduled monthly interest"
-        value={centsToDisplay(outputs.scheduledInterestCents)}
-      />
-      <DetailRow
-        label="Proration factor"
-        value={`${outputs.daysInScheduledMonth > 0 ? `${outputs.days}/${outputs.daysInScheduledMonth} = ` : ""}${(outputs.prorationFactor * 100).toFixed(2)}%`}
-      />
-      <DetailRow
-        label="Prorated interest (today)"
-        value={centsToDisplay(outputs.interestPortionCents)}
+        label="Interest (this payment)"
+        value={centsToDisplay(outputs.interestCents)}
       />
       <DetailRow
         label="Principal portion"
-        value={centsToDisplay(outputs.principalPortionCents)}
+        value={centsToDisplay(outputs.principalCents)}
       />
       <Separator />
       <div className="flex justify-between items-baseline pt-2">
@@ -323,26 +287,6 @@ function ScheduledPaymentDetail({
         label="New outstanding"
         value={centsToDisplay(outputs.newOutstandingCents)}
       />
-      <DetailRow
-        label="Next due date"
-        value={formatYmdShort(outputs.nextDueDate)}
-      />
-      <DetailRow
-        label="Days to next due"
-        value={`${outputs.daysFromPayOnToNextDue} days`}
-      />
-
-      {outputs.originalSchedule.length > 0 ||
-      outputs.remainingSchedule.length > 0 ? (
-        <>
-          <Separator />
-          <ScheduleComparison
-            originalSchedule={outputs.originalSchedule}
-            remainingSchedule={outputs.remainingSchedule}
-            instalmentsAlreadyPaid={inputs.instalmentsAlreadyPaid}
-          />
-        </>
-      ) : null}
     </div>
   );
 }

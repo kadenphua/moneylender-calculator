@@ -3,8 +3,6 @@ import {
   calculateFullSettlement,
   calculateScheduledPayment,
   centsToDisplay,
-  generateOriginalSchedule,
-  LatePaymentError,
   roundHalfUp,
 } from "./calc";
 
@@ -146,164 +144,88 @@ describe("Full Settlement — acceptance tests", () => {
   });
 });
 
-describe("Scheduled Payment (Mode B) — annuity amortisation tests", () => {
-  // Loan A from the CRM: $1,000 over 6 monthly instalments at 3.25% per
-  // month, monthly payment $186.13. Used for tests 8 and 10-12.
-  const baseLoanA = {
-    originalPrincipalCents: 100000,
-    totalInstalments: 6,
-    instalmentsAlreadyPaid: 0,
-    outstandingCents: 100000,
-    rateUnit: "monthly" as const,
-    ratePercent: 3.25,
-    monthlyPaymentCents: 18613,
-    loanStartDate: d(2026, 4, 4),
-    lastPaymentDate: d(2026, 4, 4),
-    payOnDate: d(2026, 5, 4),
+describe("Scheduled Payment (Mode B) — daily-interest model", () => {
+  // Verified reference loan: outstanding $2,174.45 @ 41% annual, monthly
+  // payment $598.68, last payment 27 Apr 2026.
+  const baseB1 = {
+    outstandingCents: 217445,
+    annualRatePercent: 41,
+    monthlyPaymentCents: 59868,
+    lastPaymentDate: d(2026, 4, 27),
+    payOnDate: d(2026, 5, 22),
   };
 
-  it("TEST 8: original schedule — Loan A ($1,000 / 6 / $186.13 / 3.25% monthly)", () => {
-    const schedule = generateOriginalSchedule(
-      100000,
-      6,
-      18613,
-      3.25,
-      d(2026, 4, 4),
-    );
+  it("TEST B1: verified reference case (25 days)", () => {
+    const result = calculateScheduledPayment(baseB1);
 
-    expect(schedule).toHaveLength(6);
+    expect(result.days).toBe(25);
+    // roundHalfUp(217445 × 0.41/365 × 25) = roundHalfUp(6106.33) = 6106
+    expect(result.interestCents).toBe(6106);
+    expect(result.principalCents).toBe(53762);
+    expect(result.todayAmountCents).toBe(59868);
+    expect(result.newOutstandingCents).toBe(163683);
 
-    const expected = [
-      { dueDate: d(2026, 5, 4), principal: 15363, interest: 3250, total: 18613 },
-      { dueDate: d(2026, 6, 4), principal: 15862, interest: 2751, total: 18613 },
-      { dueDate: d(2026, 7, 4), principal: 16378, interest: 2235, total: 18613 },
-      { dueDate: d(2026, 8, 4), principal: 16910, interest: 1703, total: 18613 },
-      { dueDate: d(2026, 9, 4), principal: 17460, interest: 1153, total: 18613 },
-      { dueDate: d(2026, 10, 4), principal: 18027, interest: 586, total: 18613 },
-    ];
-    schedule.forEach((row, i) => {
-      expect(row.dueDate).toEqual(expected[i].dueDate);
-      expect(row.principalCents).toBe(expected[i].principal);
-      expect(row.interestCents).toBe(expected[i].interest);
-      expect(row.totalCents).toBe(expected[i].total);
-    });
-
-    const totalPrincipal = schedule.reduce(
-      (sum, row) => sum + row.principalCents,
-      0,
-    );
-    expect(totalPrincipal).toBe(100000);
-    expect(schedule[5].outstandingAfterRowCents).toBe(0);
+    expect(centsToDisplay(result.interestCents)).toBe("$61.06");
+    expect(centsToDisplay(result.principalCents)).toBe("$537.62");
+    expect(centsToDisplay(result.todayAmountCents)).toBe("$598.68");
+    expect(centsToDisplay(result.newOutstandingCents)).toBe("$1,636.83");
   });
 
-  it("TEST 9: original schedule — Loan B ($5,000 / 12 / $509.84 / 3.25% monthly); last row absorbs $0.06 remainder", () => {
-    const schedule = generateOriginalSchedule(
-      500000,
-      12,
-      50984,
-      3.25,
-      d(2026, 4, 21),
-    );
-
-    expect(schedule).toHaveLength(12);
-
-    const expected = [
-      { principal: 34734, interest: 16250, total: 50984 },
-      { principal: 35863, interest: 15121, total: 50984 },
-      { principal: 37028, interest: 13956, total: 50984 },
-      { principal: 38232, interest: 12752, total: 50984 },
-      { principal: 39474, interest: 11510, total: 50984 },
-      { principal: 40757, interest: 10227, total: 50984 },
-      { principal: 42082, interest: 8902, total: 50984 },
-      { principal: 43450, interest: 7534, total: 50984 },
-      { principal: 44862, interest: 6122, total: 50984 },
-      { principal: 46320, interest: 4664, total: 50984 },
-      { principal: 47825, interest: 3159, total: 50984 },
-      // Last row absorbs the cumulative cent rounding remainder — total is
-      // $509.78, six cents short of the constant monthly payment.
-      { principal: 49373, interest: 1605, total: 50978 },
-    ];
-    schedule.forEach((row, i) => {
-      expect(row.principalCents).toBe(expected[i].principal);
-      expect(row.interestCents).toBe(expected[i].interest);
-      expect(row.totalCents).toBe(expected[i].total);
-    });
-
-    const totalPrincipal = schedule.reduce(
-      (sum, row) => sum + row.principalCents,
-      0,
-    );
-    expect(totalPrincipal).toBe(500000);
-    expect(schedule[11].outstandingAfterRowCents).toBe(0);
-  });
-
-  it("TEST 10: on-time scheduled payment — first instalment of Loan A", () => {
-    const result = calculateScheduledPayment(baseLoanA);
-
-    expect(result.days).toBe(30);
-    expect(result.daysInScheduledMonth).toBe(30);
-    expect(result.prorationFactor).toBe(1);
-    expect(result.scheduledInterestCents).toBe(3250);
-    expect(result.interestPortionCents).toBe(3250);
-    expect(result.principalPortionCents).toBe(15363);
-    expect(result.todayAmountCents).toBe(18613);
-    expect(result.newOutstandingCents).toBe(84637);
-  });
-
-  it("TEST 11: early payment (7 days early) — interest prorated, principal unchanged", () => {
+  it("TEST B2: same-day payment (0 days) — interest 0, today = monthly payment", () => {
     const result = calculateScheduledPayment({
-      ...baseLoanA,
-      payOnDate: d(2026, 4, 27),
-    });
-
-    expect(result.days).toBe(23);
-    expect(result.daysInScheduledMonth).toBe(30);
-    expect(result.prorationFactor).toBeCloseTo(23 / 30, 10);
-    expect(result.scheduledInterestCents).toBe(3250);
-    // roundHalfUp(3250 × 23/30) = roundHalfUp(2491.666...) = 2492
-    expect(result.interestPortionCents).toBe(2492);
-    expect(result.principalPortionCents).toBe(15363);
-    expect(result.todayAmountCents).toBe(17855);
-    expect(result.newOutstandingCents).toBe(84637);
-  });
-
-  it("TEST 12: same-day payment — 0 days, prorated interest = 0", () => {
-    const result = calculateScheduledPayment({
-      ...baseLoanA,
+      outstandingCents: 100000,
+      annualRatePercent: 39,
+      monthlyPaymentCents: 18613,
+      lastPaymentDate: d(2026, 4, 4),
       payOnDate: d(2026, 4, 4),
     });
 
     expect(result.days).toBe(0);
-    expect(result.prorationFactor).toBe(0);
-    expect(result.scheduledInterestCents).toBe(3250);
-    expect(result.interestPortionCents).toBe(0);
-    expect(result.principalPortionCents).toBe(15363);
-    expect(result.todayAmountCents).toBe(15363);
-    expect(result.newOutstandingCents).toBe(84637);
+    expect(result.interestCents).toBe(0);
+    expect(result.principalCents).toBe(18613);
+    expect(result.todayAmountCents).toBe(18613);
+    expect(result.newOutstandingCents).toBe(81387);
   });
 
-  it("TEST 13: lastPaymentDate before loanStartDate must throw", () => {
-    expect(() =>
-      calculateScheduledPayment({
-        ...baseLoanA,
-        loanStartDate: d(2026, 5, 1),
-        lastPaymentDate: d(2026, 4, 1),
-      }),
-    ).toThrow(/Last payment date cannot be before loan start date/);
+  it("TEST B3: 30-day period", () => {
+    const result = calculateScheduledPayment({
+      outstandingCents: 100000,
+      annualRatePercent: 39,
+      monthlyPaymentCents: 18613,
+      lastPaymentDate: d(2026, 4, 4),
+      payOnDate: d(2026, 5, 4),
+    });
+
+    expect(result.days).toBe(30);
+    // roundHalfUp(100000 × 0.39/365 × 30) = roundHalfUp(3205.48) = 3205
+    expect(result.interestCents).toBe(3205);
+    expect(result.principalCents).toBe(15408);
+    expect(result.todayAmountCents).toBe(18613);
+    expect(result.newOutstandingCents).toBe(84592);
   });
 
-  it("TEST 14: payOnDate > addMonths(lastPayment, 1) must throw LatePaymentError", () => {
+  it("TEST B4: pay-on before last payment must throw", () => {
     expect(() =>
       calculateScheduledPayment({
-        ...baseLoanA,
-        payOnDate: d(2026, 5, 15),
+        ...baseB1,
+        lastPaymentDate: d(2026, 5, 4),
+        payOnDate: d(2026, 4, 4),
       }),
-    ).toThrow(LatePaymentError);
+    ).toThrow(/before start/);
+  });
+
+  it("TEST B5: validation — outstanding > 0, 0 < rate < 1000, monthly payment > 0", () => {
     expect(() =>
-      calculateScheduledPayment({
-        ...baseLoanA,
-        payOnDate: d(2026, 5, 15),
-      }),
-    ).toThrow(/legacy CRM/);
+      calculateScheduledPayment({ ...baseB1, outstandingCents: 0 }),
+    ).toThrow(/outstandingCents/);
+    expect(() =>
+      calculateScheduledPayment({ ...baseB1, annualRatePercent: 0 }),
+    ).toThrow(/annualRatePercent/);
+    expect(() =>
+      calculateScheduledPayment({ ...baseB1, annualRatePercent: 1000 }),
+    ).toThrow(/annualRatePercent/);
+    expect(() =>
+      calculateScheduledPayment({ ...baseB1, monthlyPaymentCents: 0 }),
+    ).toThrow(/monthlyPaymentCents/);
   });
 });

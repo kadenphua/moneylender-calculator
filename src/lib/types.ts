@@ -20,43 +20,20 @@ export interface FullSettlementOutputsStored {
 
 export interface ScheduledPaymentInputsStored {
   borrowerRef: string;
-  originalPrincipalCents: number;
-  totalInstalments: number;
-  instalmentsAlreadyPaid: number;
   outstandingCents: number;
-  rateUnit: RateUnit;
-  ratePercent: number;
+  annualRatePercent: number;
   monthlyPaymentCents: number;
-  loanStartDate: string;
   lastPaymentDate: string;
   payOnDate: string;
-}
-
-export interface ScheduleRowStored {
-  rowNumber: number;
-  dueDate: string;
-  daysInPeriod: number;
-  principalCents: number;
-  interestCents: number;
-  totalCents: number;
-  outstandingAfterRowCents: number;
 }
 
 export interface ScheduledPaymentOutputsStored {
   days: number;
   dailyRate: number;
-  monthlyRatePercent: number;
-  daysInScheduledMonth: number;
-  prorationFactor: number;
-  scheduledInterestCents: number;
-  principalPortionCents: number;
-  interestPortionCents: number;
+  interestCents: number;
+  principalCents: number;
   todayAmountCents: number;
   newOutstandingCents: number;
-  nextDueDate: string;
-  daysFromPayOnToNextDue: number;
-  remainingSchedule: ScheduleRowStored[];
-  originalSchedule: ScheduleRowStored[];
 }
 
 interface RecordBase {

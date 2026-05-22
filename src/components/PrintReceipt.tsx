@@ -1,4 +1,3 @@
-import { ScheduleComparison } from "@/components/ScheduleComparison";
 import {
   centsToReceiptDisplay,
   formatPercent,
@@ -105,14 +104,13 @@ function ScheduledPaymentReceipt({
   const { inputs, outputs } = record;
   const receiptIdShort = record.id.slice(0, 8);
   const printedAt = formatSgDateTime(new Date(record.timestampUtcIso));
-  const rateLabel = inputs.rateUnit === "annual" ? "per year" : "per month";
 
   return (
     <>
       <div className="text-center mb-6">
         <div className="text-xl font-bold">{record.companyName || "—"}</div>
         <div className="text-lg mt-2 tracking-wider">
-          SCHEDULED PAYMENT QUOTATION (Early/On-time)
+          SCHEDULED PAYMENT QUOTATION
         </div>
       </div>
 
@@ -127,41 +125,25 @@ function ScheduledPaymentReceipt({
 
       <div className="space-y-1 text-sm">
         <Row
-          label="Original loan principal"
-          value={centsToReceiptDisplay(inputs.originalPrincipalCents)}
-        />
-        <Row
-          label="Loan start date"
-          value={formatYmdReceipt(inputs.loanStartDate)}
-        />
-        <Row label="Total instalments" value={String(inputs.totalInstalments)} />
-        <Row
-          label="Instalments already paid"
-          value={String(inputs.instalmentsAlreadyPaid)}
-        />
-        <Row
-          label="Outstanding principal"
+          label="Current outstanding"
           value={centsToReceiptDisplay(inputs.outstandingCents)}
         />
         <Row
-          label="Monthly payment amount"
+          label="Interest rate"
+          value={`${inputs.annualRatePercent}% per year`}
+        />
+        <Row
+          label="Monthly payment"
           value={centsToReceiptDisplay(inputs.monthlyPaymentCents)}
         />
         <Row
-          label="Last payment date (or loan start date if no payments made yet)"
+          label="Last payment date"
           value={formatYmdReceipt(inputs.lastPaymentDate)}
         />
+        <Row label="Pay-on date" value={formatYmdReceipt(inputs.payOnDate)} />
         <Row
-          label="Pay-on date (today)"
-          value={formatYmdReceipt(inputs.payOnDate)}
-        />
-        <Row
-          label="Interest rate"
-          value={`${inputs.ratePercent.toFixed(2)}% ${rateLabel}`}
-        />
-        <Row
-          label=""
-          value={`(${outputs.monthlyRatePercent.toFixed(4)}% per month)`}
+          label="Days since last payment"
+          value={String(outputs.days)}
         />
       </div>
 
@@ -169,24 +151,12 @@ function ScheduledPaymentReceipt({
 
       <div className="space-y-1 text-sm">
         <Row
-          label="Days since last payment"
-          value={`${outputs.days} of ${outputs.daysInScheduledMonth}`}
-        />
-        <Row
-          label="Scheduled monthly interest"
-          value={centsToReceiptDisplay(outputs.scheduledInterestCents)}
-        />
-        <Row
-          label="Proration factor"
-          value={`${outputs.daysInScheduledMonth > 0 ? `${outputs.days}/${outputs.daysInScheduledMonth} = ` : ""}${(outputs.prorationFactor * 100).toFixed(2)}%`}
-        />
-        <Row
-          label="Prorated interest (today)"
-          value={centsToReceiptDisplay(outputs.interestPortionCents)}
+          label="Interest (this payment)"
+          value={centsToReceiptDisplay(outputs.interestCents)}
         />
         <Row
           label="Principal portion"
-          value={centsToReceiptDisplay(outputs.principalPortionCents)}
+          value={centsToReceiptDisplay(outputs.principalCents)}
         />
       </div>
 
@@ -197,32 +167,12 @@ function ScheduledPaymentReceipt({
         <span>{centsToReceiptDisplay(outputs.todayAmountCents)}</span>
       </div>
 
-      <hr className="border-t border-black my-3" />
-
-      <div className="space-y-1 text-sm">
+      <div className="space-y-1 text-sm mt-1">
         <Row
-          label="Outstanding after this payment"
+          label="New outstanding"
           value={centsToReceiptDisplay(outputs.newOutstandingCents)}
         />
       </div>
-
-      {outputs.originalSchedule.length > 0 ||
-      outputs.remainingSchedule.length > 0 ? (
-        <>
-          <div className="mt-4">
-            <ScheduleComparison
-              originalSchedule={outputs.originalSchedule}
-              remainingSchedule={outputs.remainingSchedule}
-              instalmentsAlreadyPaid={inputs.instalmentsAlreadyPaid}
-              variant="receipt"
-            />
-          </div>
-
-          <p className="mt-3 text-xs italic">
-            Note: Schedule recalculated based on actual payment date.
-          </p>
-        </>
-      ) : null}
 
       <hr className="border-t border-black my-3" />
 
