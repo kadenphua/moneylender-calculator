@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { v4 as uuidv4 } from "uuid";
@@ -15,7 +15,12 @@ import {
   centsToDisplay,
   dollarsToCents,
 } from "@/lib/calc";
-import { formatPercent, parseYmdLocal, todayYmdLocal } from "@/lib/format";
+import {
+  formatEquivalentRate,
+  formatPercent,
+  parseYmdLocal,
+  todayYmdLocal,
+} from "@/lib/format";
 import {
   calculatorFormSchema,
   type CalculatorFormParsed,
@@ -42,6 +47,7 @@ export function ModeAFullSettlement({
     handleSubmit,
     reset,
     control,
+    watch,
     formState: { errors, isSubmitting, isValid },
   } = useForm<CalculatorFormValues, unknown, CalculatorFormParsed>({
     resolver: zodResolver(calculatorFormSchema),
@@ -56,6 +62,16 @@ export function ModeAFullSettlement({
     },
     mode: "onChange",
   });
+
+  const watchedRatePercent = watch("ratePercent");
+  const watchedRateUnit = watch("rateUnit");
+
+  // Equivalent rate in the OTHER unit, shown beside the rate field so the
+  // officer can catch unit-confusion mistakes. Same helper as Mode B.
+  const equivalentRateHint = useMemo<string | null>(
+    () => formatEquivalentRate(watchedRatePercent, watchedRateUnit),
+    [watchedRatePercent, watchedRateUnit],
+  );
 
   async function onSubmit(values: CalculatorFormParsed) {
     const outstandingCents = dollarsToCents(values.outstandingDollars);
@@ -180,6 +196,11 @@ export function ModeAFullSettlement({
                   placeholder="e.g. 48"
                   {...register("ratePercent", { valueAsNumber: true })}
                 />
+                {equivalentRateHint ? (
+                  <p className="text-xs text-muted-foreground">
+                    {equivalentRateHint}
+                  </p>
+                ) : null}
               </Field>
 
               <Controller

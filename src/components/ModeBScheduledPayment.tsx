@@ -23,6 +23,7 @@ import {
 } from "@/lib/calc";
 import {
   dateToYmdLocal,
+  formatEquivalentRate,
   formatYmdShort,
   parseYmdLocal,
   todayYmdLocal,
@@ -224,22 +225,11 @@ export function ModeBScheduledPayment({
 
   // Reciprocal rate hint: when "Per year" + 39 is entered, show
   // "= 3.25% per month"; when "Per month" + 3.25, show "= 39% per year".
-  // Number is rounded to 2 dp and trailing zeros stripped so 39.00 reads
-  // as "39" while 3.25 keeps both decimals (matches the spec examples).
-  const reciprocalRateHint = useMemo<string | null>(() => {
-    if (
-      typeof watchedRatePercent !== "number" ||
-      !Number.isFinite(watchedRatePercent) ||
-      watchedRatePercent <= 0
-    )
-      return null;
-    if (watchedRateUnit === "annual") {
-      const perMonth = watchedRatePercent / 12;
-      return `= ${stripTrailingZeros(perMonth.toFixed(2))}% per month`;
-    }
-    const perYear = watchedRatePercent * 12;
-    return `= ${stripTrailingZeros(perYear.toFixed(2))}% per year`;
-  }, [watchedRatePercent, watchedRateUnit]);
+  // Shared with Mode A via formatEquivalentRate so both behave identically.
+  const reciprocalRateHint = useMemo<string | null>(
+    () => formatEquivalentRate(watchedRatePercent, watchedRateUnit),
+    [watchedRatePercent, watchedRateUnit],
+  );
 
   // Amber when the typed outstanding differs from the schedule-derived value
   // by strictly more than $1.00 (100 cents). $1.00 exactly is still neutral.
@@ -680,11 +670,6 @@ function serialiseRow(row: ScheduleRow): ScheduleRowStored {
     totalCents: row.totalCents,
     outstandingAfterRowCents: row.outstandingAfterRowCents,
   };
-}
-
-function stripTrailingZeros(fixedString: string): string {
-  // Turns "39.00" -> "39", "3.25" -> "3.25", "39.50" -> "39.5".
-  return fixedString.replace(/\.?0+$/, "") || "0";
 }
 
 function formatCurrency(v: number | undefined | null): string {
