@@ -1,3 +1,4 @@
+import { CalculationBreakdown } from "@/components/CalculationBreakdown";
 import {
   centsToReceiptDisplay,
   formatPercent,
@@ -89,6 +90,8 @@ function FullSettlementReceipt({ record }: { record: FullSettlementRecord }) {
         <span>{centsToReceiptDisplay(outputs.totalCents)}</span>
       </div>
 
+      <CalculationBreakdown record={record} variant="receipt" />
+
       <hr className="border-t border-black my-3" />
 
       <div className="mt-12 text-sm">Signature: ______________________</div>
@@ -173,6 +176,8 @@ function ScheduledPaymentReceipt({
           value={centsToReceiptDisplay(outputs.newOutstandingCents)}
         />
       </div>
+
+      <CalculationBreakdown record={record} variant="receipt" />
 
       <hr className="border-t border-black my-3" />
 
