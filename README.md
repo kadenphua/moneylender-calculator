@@ -100,68 +100,78 @@ No officer action required.
 ## Spec essentials (the locked specification)
 
 - **Loan model:** reducing balance; interest on outstanding principal only.
-- **Rate input:** entered per loan. "Per year" is _nominal annual_
-  (monthly × 12, no compounding). Daily rate is `annual_rate / 100 / 365`.
-- **Day counting:** exclusive on both ends via date-fns
-  `differenceInCalendarDays` (e.g. 1 Feb → 22 Feb = 21 days). Do **not**
-  add 1.
+- **Rate input:** entered as a nominal **annual** percent (Mode B is always
+  annual; Mode A keeps its per-year ⇄ per-month toggle, where per-month is
+  ×12, no compounding). Daily rate is `annual_rate / 100 / 360`.
+- **Day counting (30/360):** both modes use the 30/360 convention via
+  `days360(lastDate, payOnDate)` — each day-of-month is capped at 30, then
+  whole 30-day months plus the day difference are counted (e.g. a 31-day
+  calendar month still counts as 30 days). Combined with the **`/360`
+  divisor** this gives one consistent, mathematically sound interest method
+  across the whole calculator. **This is a deliberate business choice and
+  intentionally differs from the legacy CRM, which inconsistently uses
+  30-day months with a `/365` divisor.**
 - **Rounding:** all intermediate math in integer cents. Final display
   rounded half-up (not banker's). Implemented as
   `Math.sign(x) * Math.floor(Math.abs(x) + 0.5)`.
-- **Mode A formula:**
+- **Mode A formula (30/360):**
   ```
-  days = differenceInCalendarDays(payOnDate, lastPaymentDate)
-  dailyRate = (annualRate / 100) / 365
+  days = days360(lastPaymentDate, payOnDate)
+  dailyRate = (annualRate / 100) / 360        (per-month input is ×12 first)
   interestCents = roundHalfUp(outstandingCents × dailyRate × days)
   totalCents = outstandingCents + interestCents + outstandingLateFeeCents
   ```
   Outstanding late fee is added as-is. Mode A does not compute late fees —
-  the officer enters whatever's already on record.
-- **Mode B model (daily interest):**
+  the officer enters whatever's already on record. Only the day-count and
+  divisor changed (from actual-days/365); inputs and late-fee handling are
+  unchanged.
+- **Mode B model (30/360 daily interest):**
   ```
-  days            = differenceInCalendarDays(payOnDate, lastPaymentDate)
-  dailyRate       = (annualRatePercent / 100) / 365
+  days            = days360(lastPaymentDate, payOnDate)
+  dailyRate       = (annualRatePercent / 100) / 360
   interestCents   = roundHalfUp(outstandingCents × dailyRate × days)
   principalCents  = monthlyPaymentCents − interestCents
   newOutstanding  = outstandingCents − principalCents
   todayAmount     = monthlyPaymentCents          (ALWAYS, fixed)
   ```
-  The borrower always pays the fixed monthly payment; the split between
-  interest and principal varies with the number of days since the last
-  payment. Same-day payment (`days = 0`) means zero interest, so the whole
-  monthly payment goes to principal. The rate is always entered as a nominal
-  annual percentage (the per-year ⇄ per-month toggle was removed); interest
-  uses the same daily method as Mode A.
+  The borrower always pays the fixed monthly payment; the interest/principal
+  split varies with the day count. Same-day payment (`days = 0`) means zero
+  interest, so the whole monthly payment goes to principal. Rate is entered as
+  a nominal annual percent. Both modes share the same 30/360 + /360 method.
 
 ## Test cases for the accountant
 
 These are also encoded as Vitest tests in `src/lib/calc.test.ts`. Re-key
 each one into the calculator UI and verify the on-screen total matches.
 
-### Mode A — Full Settlement
+All amounts use the 30/360 day-count with a /360 divisor, so they
+**intentionally differ from the legacy CRM**.
 
-| # | Outstanding | Rate            | Last payment | Pay-on date | Late fee | Days | Interest | **Total** |
-|---|-------------|-----------------|--------------|-------------|----------|------|----------|-----------|
-| 1 | $2,400.00   | 48% per year    | 2026-05-01   | 2026-05-22  | $0       | 21   | $66.28   | **$2,466.28** |
-| 2 | $2,400.00   | 4% per month    | 2026-05-01   | 2026-05-22  | $0       | 21   | $66.28   | **$2,466.28** (identical to #1) |
-| 3 | $1,000.00   | 48% per year    | 2026-05-15   | 2026-05-15  | $0       | 0    | $0.00    | **$1,000.00** |
-| 4 | $2,400.00   | 48% per year    | 2026-05-01   | 2026-05-22  | $60.00   | 21   | $66.28   | **$2,526.28** |
-| 5 | $100.00     | 1.825% per year | 2026-01-01   | 2026-01-02  | $0       | 1    | $0.01    | **$100.01** (half-up boundary — exact 0.5¢ rounds up) |
-| 6 | $2,400.00   | 48% per year    | 2026-05-01   | 2026-06-15  | $0       | 45   | $142.03  | **$2,542.03** |
-| 7 | $2,400.00   | 48% per year    | 2026-05-22   | 2026-05-01  | —        | —    | —        | **Error** — pay-on before last payment is rejected |
+### days360 — 30/360 day count
 
-### Mode B — Scheduled Payment (daily-interest model)
+`days360(2026-04-21, 2026-05-21) = 30` · `(…, 2026-05-06) = 15` ·
+`days360(2026-05-21, 2026-06-21) = 30` (calendar month is 31, still 30) ·
+`days360(2026-04-21, 2026-05-31) = 39` (31 caps to 30) ·
+`days360(2025-08-21, 2025-09-06) = 15`.
 
-The verified reference case (B1) matches the CRM cent-for-cent: outstanding
-$2,174.45 @ 41% annual, monthly payment $598.68, last payment 2026-04-27.
+### Mode A — Full Settlement (30/360)
+
+| #  | Outstanding | Rate         | Last payment | Pay-on date | Late fee | Days (30/360) | Interest | **Total** |
+|----|-------------|--------------|--------------|-------------|----------|---------------|----------|-----------|
+| A1 | $2,400.00   | 48% per year | 2026-05-01   | 2026-05-21  | $0       | 20            | $64.00   | **$2,464.00** (was $2,466.28 under the old actual-days/365 — change is intended) |
+| A2 | $2,400.00   | 48% per year | 2026-05-01   | 2026-05-21  | $60.00   | 20            | $64.00   | **$2,524.00** |
+
+Validation: outstanding must be > 0 and pay-on must not be before the last
+payment date.
+
+### Mode B — Scheduled Payment (30/360 daily interest)
 
 | #  | Case | Asserts |
 |----|------|---------|
-| B1 | **Verified reference** — outstanding $2,174.45 @ 41%/yr, monthly $598.68, last 2026-04-27, payOn 2026-05-22 | days = 25, interest = $61.06 `roundHalfUp(217445 × 0.41/365 × 25)`, principal = $537.62, **TODAY = $598.68** (= monthly payment), newOutstanding = $1,636.83. |
-| B2 | **Same-day payment** — outstanding $1,000 @ 39%/yr, monthly $186.13, last & payOn 2026-04-04 | days = 0, interest = $0.00, principal = $186.13, **TODAY = $186.13**, newOutstanding = $813.87. |
-| B3 | **30-day period** — outstanding $1,000 @ 39%/yr, monthly $186.13, last 2026-04-04, payOn 2026-05-04 | days = 30, interest = $32.05 `roundHalfUp(100000 × 0.39/365 × 30)`, principal = $154.08, **TODAY = $186.13**, newOutstanding = $845.92. |
-| B4 | Validation: pay-on **before** last payment | **Refused** (day count is negative). |
-| B5 | Validation: outstanding > 0, 0 < rate < 1000, monthly payment > 0 | Each violated bound **throws**. |
+| B1 | **Regular 30-day month** — outstanding $2,104.80 @ 39%/yr, monthly $234.52, last 2026-04-21, payOn 2026-05-21 | days = 30, interest = $68.41 `roundHalfUp(210480 × 0.39/360 × 30)`, principal = $166.11, **TODAY = $234.52** (= monthly payment), newOutstanding = $1,938.69. |
+| B2 | **Early payment (15 days)** — same loan, payOn 2026-05-06 | days = 15, interest = $34.20, principal = $200.32, **TODAY = $234.52**, newOutstanding = $1,904.48. |
+| B3 | **31-day calendar month still 30** — outstanding $5,000 @ 41%/yr, monthly $600, last 2026-05-21, payOn 2026-06-21 | days = 30, interest = $170.83 `roundHalfUp(500000 × 0.41/360 × 30)`, principal = $429.17, newOutstanding = $4,570.83. |
+| —  | Validation | outstanding > 0, rate > 0, monthly payment > 0, pay-on not before last → **throws**. |
 
 ## ⚠️ Before deploying to the team
 
@@ -186,7 +196,7 @@ Independent verification is mandatory.
 src/
 ├── lib/
 │   ├── calc.ts        ← pure engine (no React, lift-ready for CRM)
-│   ├── calc.test.ts   ← 12 acceptance tests (7 Mode A + 5 Mode B daily-interest)
+│   ├── calc.test.ts   ← 12 acceptance tests (5 days360 + 3 Mode A + 4 Mode B, all 30/360)
 │   ├── format.ts      ← S$ formatter, date helpers, Asia/Singapore
 │   ├── db.ts          ← IndexedDB wrapper, v1→v2 mode … v4→v5 daily-interest Mode B
 │   ├── schema.ts      ← zod form schemas (Mode A + Mode B)

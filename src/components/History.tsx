@@ -211,7 +211,7 @@ function FullSettlementDetail({ record }: { record: FullSettlementRecord }) {
         value={centsToDisplay(inputs.outstandingLateFeeCents)}
       />
       <Separator />
-      <DetailRow label="Days" value={String(outputs.days)} />
+      <DetailRow label="Days" value={`${outputs.days} days (30/360)`} />
       <DetailRow
         label="Daily rate"
         value={formatPercent(outputs.dailyRate, 6)}
@@ -266,7 +266,7 @@ function ScheduledPaymentDetail({
       <Separator />
       <DetailRow
         label="Days since last payment"
-        value={String(outputs.days)}
+        value={`${outputs.days} days (30/360)`}
       />
       <DetailRow
         label="Interest (this payment)"

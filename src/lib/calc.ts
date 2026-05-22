@@ -47,22 +47,35 @@ export function centsToDisplay(cents: number): string {
   return `${negative ? "-" : ""}$${dollarsStr}.${centsStr}`;
 }
 
-export function daysBetween(start: Date, end: Date): number {
-  const days = differenceInCalendarDays(end, start);
-  if (days < 0) {
-    throw new Error(
-      `daysBetween: end date (${end.toISOString()}) is before start date (${start.toISOString()})`,
-    );
+// 30/360 day count: cap each day-of-month at 30, then count whole 30-day
+// months plus the day difference. Used with a /360 divisor (see annualToDaily)
+// so the whole calculator uses one consistent interest method. This is a
+// deliberate business choice and intentionally differs from the legacy CRM
+// (which uses 30-day months with a /365 divisor).
+export function days360(start: Date, end: Date): number {
+  const d1 = Math.min(start.getDate(), 30);
+  const d2 = Math.min(end.getDate(), 30);
+  return (
+    (end.getFullYear() - start.getFullYear()) * 360 +
+    (end.getMonth() - start.getMonth()) * 30 +
+    (d2 - d1)
+  );
+}
+
+// Throws if the pay-on date falls before the last payment date (calendar
+// comparison, so month-end edges are handled correctly).
+function assertPayOnNotBeforeLast(lastDate: Date, payOnDate: Date): void {
+  if (differenceInCalendarDays(payOnDate, lastDate) < 0) {
+    throw new Error("Pay-on date cannot be before the last payment date.");
   }
-  return days;
 }
 
 export function annualToDaily(annualRatePercent: number): number {
-  return annualRatePercent / 100 / 365;
+  return annualRatePercent / 100 / 360;
 }
 
 export function monthlyToDaily(monthlyRatePercent: number): number {
-  return (monthlyRatePercent / 100) * 12 / 365;
+  return (monthlyRatePercent / 100) * 12 / 360;
 }
 
 export type CalculationMode = "fullSettlement" | "scheduled";
@@ -131,7 +144,8 @@ export function calculateScheduledPayment(
     );
   }
 
-  const days = daysBetween(lastPaymentDate, payOnDate);
+  assertPayOnNotBeforeLast(lastPaymentDate, payOnDate);
+  const days = days360(lastPaymentDate, payOnDate);
   const dailyRate = annualToDaily(annualRatePercent);
   const interestCents = roundHalfUp(outstandingCents * dailyRate * days);
   const principalCents = monthlyPaymentCents - interestCents;
@@ -176,7 +190,8 @@ export function calculateFullSettlement(
     );
   }
 
-  const days = daysBetween(lastPaymentDate, payOnDate);
+  assertPayOnNotBeforeLast(lastPaymentDate, payOnDate);
+  const days = days360(lastPaymentDate, payOnDate);
   const dailyRate =
     rateUnit === "annual"
       ? annualToDaily(ratePercent)

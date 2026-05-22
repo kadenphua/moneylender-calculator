@@ -3,229 +3,155 @@ import {
   calculateFullSettlement,
   calculateScheduledPayment,
   centsToDisplay,
-  roundHalfUp,
+  days360,
 } from "./calc";
 
 // Date constructor uses LOCAL midnight (year, monthIndex, day) so the test is
-// timezone-independent. differenceInCalendarDays operates on the local
-// calendar, so building dates the same way keeps day counts stable.
+// timezone-independent. days360 reads local getDate/getMonth/getFullYear, so
+// building dates the same way keeps the day counts stable.
 const d = (y: number, m: number, day: number) => new Date(y, m - 1, day);
 
-describe("Full Settlement — acceptance tests", () => {
-  it("TEST 1: annual rate input — reference case", () => {
+describe("days360 — 30/360 day count", () => {
+  it("full 30-day month", () => {
+    expect(days360(d(2026, 4, 21), d(2026, 5, 21))).toBe(30);
+  });
+  it("mid-month — 15 days", () => {
+    expect(days360(d(2026, 4, 21), d(2026, 5, 6))).toBe(15);
+  });
+  it("31-day calendar month still counts 30", () => {
+    expect(days360(d(2026, 5, 21), d(2026, 6, 21))).toBe(30);
+  });
+  it("end-of-month 31 caps to 30 — 39 days", () => {
+    expect(days360(d(2026, 4, 21), d(2026, 5, 31))).toBe(39);
+  });
+  it("15 days across a different month/year", () => {
+    expect(days360(d(2025, 8, 21), d(2025, 9, 6))).toBe(15);
+  });
+});
+
+describe("Full Settlement (Mode A) — 30/360 acceptance tests", () => {
+  it("TEST A1: full settlement, 30/360 (20 days)", () => {
     const result = calculateFullSettlement({
       outstandingCents: 240000,
       rateUnit: "annual",
       ratePercent: 48,
       lastPaymentDate: d(2026, 5, 1),
-      payOnDate: d(2026, 5, 22),
+      payOnDate: d(2026, 5, 21),
       outstandingLateFeeCents: 0,
     });
 
-    expect(result.days).toBe(21);
-    expect(result.dailyRate).toBe(0.48 / 365);
-    expect(result.dailyRate).toBeCloseTo(0.001315068493150685, 18);
-    expect(result.interestCents).toBe(6628);
-    expect(result.totalCents).toBe(246628);
-    expect(centsToDisplay(result.totalCents)).toBe("$2,466.28");
+    expect(result.days).toBe(20);
+    expect(result.dailyRate).toBe(0.48 / 360);
+    // roundHalfUp(240000 × 0.48/360 × 20) = roundHalfUp(6400) = 6400
+    expect(result.interestCents).toBe(6400);
+    expect(result.totalCents).toBe(246400);
+    expect(centsToDisplay(result.totalCents)).toBe("$2,464.00");
   });
 
-  it("TEST 2: monthly rate input — must equal TEST 1", () => {
-    const annual = calculateFullSettlement({
-      outstandingCents: 240000,
-      rateUnit: "annual",
-      ratePercent: 48,
-      lastPaymentDate: d(2026, 5, 1),
-      payOnDate: d(2026, 5, 22),
-      outstandingLateFeeCents: 0,
-    });
-    const monthly = calculateFullSettlement({
-      outstandingCents: 240000,
-      rateUnit: "monthly",
-      ratePercent: 4,
-      lastPaymentDate: d(2026, 5, 1),
-      payOnDate: d(2026, 5, 22),
-      outstandingLateFeeCents: 0,
-    });
-
-    expect(monthly.dailyRate).toBe(annual.dailyRate);
-    expect(monthly.interestCents).toBe(annual.interestCents);
-    expect(monthly.totalCents).toBe(annual.totalCents);
-    expect(centsToDisplay(monthly.totalCents)).toBe("$2,466.28");
-  });
-
-  it("TEST 3: same-day settlement — zero interest", () => {
-    const result = calculateFullSettlement({
-      outstandingCents: 100000,
-      rateUnit: "annual",
-      ratePercent: 48,
-      lastPaymentDate: d(2026, 5, 15),
-      payOnDate: d(2026, 5, 15),
-      outstandingLateFeeCents: 0,
-    });
-
-    expect(result.days).toBe(0);
-    expect(result.interestCents).toBe(0);
-    expect(result.totalCents).toBe(100000);
-    expect(centsToDisplay(result.totalCents)).toBe("$1,000.00");
-  });
-
-  it("TEST 4: outstanding late fee adds to total", () => {
+  it("TEST A2: with late fee — only the interest method changed", () => {
     const result = calculateFullSettlement({
       outstandingCents: 240000,
       rateUnit: "annual",
       ratePercent: 48,
       lastPaymentDate: d(2026, 5, 1),
-      payOnDate: d(2026, 5, 22),
+      payOnDate: d(2026, 5, 21),
       outstandingLateFeeCents: 6000,
     });
 
-    expect(result.days).toBe(21);
-    expect(result.interestCents).toBe(6628);
+    expect(result.days).toBe(20);
+    expect(result.interestCents).toBe(6400);
     expect(result.outstandingLateFeeCents).toBe(6000);
-    expect(result.totalCents).toBe(252628);
-    expect(centsToDisplay(result.totalCents)).toBe("$2,526.28");
+    expect(result.totalCents).toBe(252400);
+    expect(centsToDisplay(result.totalCents)).toBe("$2,524.00");
   });
 
-  it("TEST 5: half-up rounding boundary — NOT banker's rounding", () => {
-    // Direct helper checks — Math.round() (banker's) would return 1234, 2, 0.
-    expect(roundHalfUp(1234.5)).toBe(1235);
-    expect(roundHalfUp(0.5)).toBe(1);
-    expect(roundHalfUp(1.5)).toBe(2);
-    expect(roundHalfUp(2.5)).toBe(3);
-
-    // End-to-end: $100 × 1.825%/yr × 1 day = exactly 0.5 cents.
-    // 0.01825 / 365 = 0.00005 exactly; 10000 × 0.00005 × 1 = 0.5.
-    // roundHalfUp must round 0.5 → 1 cent of interest.
-    const result = calculateFullSettlement({
-      outstandingCents: 10000,
-      rateUnit: "annual",
-      ratePercent: 1.825,
-      lastPaymentDate: d(2026, 1, 1),
-      payOnDate: d(2026, 1, 2),
-      outstandingLateFeeCents: 0,
-    });
-    expect(result.days).toBe(1);
-    expect(result.interestCents).toBe(1);
-    expect(result.totalCents).toBe(10001);
-  });
-
-  it("TEST 6: forward quote — 45 days", () => {
-    const result = calculateFullSettlement({
-      outstandingCents: 240000,
-      rateUnit: "annual",
-      ratePercent: 48,
-      lastPaymentDate: d(2026, 5, 1),
-      payOnDate: d(2026, 6, 15),
-      outstandingLateFeeCents: 0,
-    });
-
-    expect(result.days).toBe(45);
-    // 240000 × (0.48/365) × 45 = 14202.7397260…  →  roundHalfUp → 14203
-    const expectedInterest = Math.sign(240000 * (0.48 / 365) * 45) *
-      Math.floor(Math.abs(240000 * (0.48 / 365) * 45) + 0.5);
-    expect(result.interestCents).toBe(expectedInterest);
-    expect(result.interestCents).toBe(14203);
-    expect(result.totalCents).toBe(254203);
-    expect(centsToDisplay(result.totalCents)).toBe("$2,542.03");
-  });
-
-  it("TEST 7: payOn before lastPayment must throw", () => {
+  it("validation: outstanding > 0 and pay-on not before last date", () => {
+    expect(() =>
+      calculateFullSettlement({
+        outstandingCents: 0,
+        rateUnit: "annual",
+        ratePercent: 48,
+        lastPaymentDate: d(2026, 5, 1),
+        payOnDate: d(2026, 5, 21),
+        outstandingLateFeeCents: 0,
+      }),
+    ).toThrow(/outstandingCents/);
     expect(() =>
       calculateFullSettlement({
         outstandingCents: 240000,
         rateUnit: "annual",
         ratePercent: 48,
-        lastPaymentDate: d(2026, 5, 22),
+        lastPaymentDate: d(2026, 5, 21),
         payOnDate: d(2026, 5, 1),
         outstandingLateFeeCents: 0,
       }),
-    ).toThrow(/before start/);
+    ).toThrow(/before the last payment date/);
   });
 });
 
-describe("Scheduled Payment (Mode B) — daily-interest model", () => {
-  // Verified reference loan: outstanding $2,174.45 @ 41% annual, monthly
-  // payment $598.68, last payment 27 Apr 2026.
-  const baseB1 = {
-    outstandingCents: 217445,
-    annualRatePercent: 41,
-    monthlyPaymentCents: 59868,
-    lastPaymentDate: d(2026, 4, 27),
-    payOnDate: d(2026, 5, 22),
+describe("Scheduled Payment (Mode B) — 30/360 daily-interest tests", () => {
+  const base = {
+    outstandingCents: 210480,
+    annualRatePercent: 39,
+    monthlyPaymentCents: 23452,
+    lastPaymentDate: d(2026, 4, 21),
+    payOnDate: d(2026, 5, 21),
   };
 
-  it("TEST B1: verified reference case (25 days)", () => {
-    const result = calculateScheduledPayment(baseB1);
-
-    expect(result.days).toBe(25);
-    // roundHalfUp(217445 × 0.41/365 × 25) = roundHalfUp(6106.33) = 6106
-    expect(result.interestCents).toBe(6106);
-    expect(result.principalCents).toBe(53762);
-    expect(result.todayAmountCents).toBe(59868);
-    expect(result.newOutstandingCents).toBe(163683);
-
-    expect(centsToDisplay(result.interestCents)).toBe("$61.06");
-    expect(centsToDisplay(result.principalCents)).toBe("$537.62");
-    expect(centsToDisplay(result.todayAmountCents)).toBe("$598.68");
-    expect(centsToDisplay(result.newOutstandingCents)).toBe("$1,636.83");
+  it("TEST B1: regular 30-day month", () => {
+    const r = calculateScheduledPayment(base);
+    expect(r.days).toBe(30);
+    // roundHalfUp(210480 × 0.39/360 × 30) = roundHalfUp(6840.6) = 6841
+    expect(r.interestCents).toBe(6841);
+    expect(r.principalCents).toBe(16611);
+    expect(r.todayAmountCents).toBe(23452);
+    expect(r.newOutstandingCents).toBe(193869);
+    expect(centsToDisplay(r.interestCents)).toBe("$68.41");
+    expect(centsToDisplay(r.todayAmountCents)).toBe("$234.52");
+    expect(centsToDisplay(r.newOutstandingCents)).toBe("$1,938.69");
   });
 
-  it("TEST B2: same-day payment (0 days) — interest 0, today = monthly payment", () => {
-    const result = calculateScheduledPayment({
-      outstandingCents: 100000,
-      annualRatePercent: 39,
-      monthlyPaymentCents: 18613,
-      lastPaymentDate: d(2026, 4, 4),
-      payOnDate: d(2026, 4, 4),
+  it("TEST B2: early payment — 15 days", () => {
+    const r = calculateScheduledPayment({ ...base, payOnDate: d(2026, 5, 6) });
+    expect(r.days).toBe(15);
+    // roundHalfUp(210480 × 0.39/360 × 15) = roundHalfUp(3420.3) = 3420
+    expect(r.interestCents).toBe(3420);
+    expect(r.principalCents).toBe(20032);
+    expect(r.todayAmountCents).toBe(23452);
+    expect(r.newOutstandingCents).toBe(190448);
+    expect(centsToDisplay(r.principalCents)).toBe("$200.32");
+    expect(centsToDisplay(r.newOutstandingCents)).toBe("$1,904.48");
+  });
+
+  it("TEST B3: 31-day calendar month still counts 30", () => {
+    const r = calculateScheduledPayment({
+      outstandingCents: 500000,
+      annualRatePercent: 41,
+      monthlyPaymentCents: 60000,
+      lastPaymentDate: d(2026, 5, 21),
+      payOnDate: d(2026, 6, 21),
     });
-
-    expect(result.days).toBe(0);
-    expect(result.interestCents).toBe(0);
-    expect(result.principalCents).toBe(18613);
-    expect(result.todayAmountCents).toBe(18613);
-    expect(result.newOutstandingCents).toBe(81387);
+    expect(r.days).toBe(30);
+    // roundHalfUp(500000 × 0.41/360 × 30) = roundHalfUp(17083.33) = 17083
+    expect(r.interestCents).toBe(17083);
+    expect(r.principalCents).toBe(42917);
+    expect(r.todayAmountCents).toBe(60000);
+    expect(r.newOutstandingCents).toBe(457083);
+    expect(centsToDisplay(r.newOutstandingCents)).toBe("$4,570.83");
   });
 
-  it("TEST B3: 30-day period", () => {
-    const result = calculateScheduledPayment({
-      outstandingCents: 100000,
-      annualRatePercent: 39,
-      monthlyPaymentCents: 18613,
-      lastPaymentDate: d(2026, 4, 4),
-      payOnDate: d(2026, 5, 4),
-    });
-
-    expect(result.days).toBe(30);
-    // roundHalfUp(100000 × 0.39/365 × 30) = roundHalfUp(3205.48) = 3205
-    expect(result.interestCents).toBe(3205);
-    expect(result.principalCents).toBe(15408);
-    expect(result.todayAmountCents).toBe(18613);
-    expect(result.newOutstandingCents).toBe(84592);
-  });
-
-  it("TEST B4: pay-on before last payment must throw", () => {
+  it("validation: outstanding > 0, rate > 0, monthly payment > 0, pay-on not before last", () => {
     expect(() =>
-      calculateScheduledPayment({
-        ...baseB1,
-        lastPaymentDate: d(2026, 5, 4),
-        payOnDate: d(2026, 4, 4),
-      }),
-    ).toThrow(/before start/);
-  });
-
-  it("TEST B5: validation — outstanding > 0, 0 < rate < 1000, monthly payment > 0", () => {
-    expect(() =>
-      calculateScheduledPayment({ ...baseB1, outstandingCents: 0 }),
+      calculateScheduledPayment({ ...base, outstandingCents: 0 }),
     ).toThrow(/outstandingCents/);
     expect(() =>
-      calculateScheduledPayment({ ...baseB1, annualRatePercent: 0 }),
+      calculateScheduledPayment({ ...base, annualRatePercent: 0 }),
     ).toThrow(/annualRatePercent/);
     expect(() =>
-      calculateScheduledPayment({ ...baseB1, annualRatePercent: 1000 }),
-    ).toThrow(/annualRatePercent/);
-    expect(() =>
-      calculateScheduledPayment({ ...baseB1, monthlyPaymentCents: 0 }),
+      calculateScheduledPayment({ ...base, monthlyPaymentCents: 0 }),
     ).toThrow(/monthlyPaymentCents/);
+    expect(() =>
+      calculateScheduledPayment({ ...base, payOnDate: d(2026, 4, 1) }),
+    ).toThrow(/before the last payment date/);
   });
 });

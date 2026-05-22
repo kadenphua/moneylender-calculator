@@ -328,7 +328,7 @@ function ResultPanel({
         <CardTitle>Result</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <ResultRow label="Days" value={String(outputs.days)} />
+        <ResultRow label="Days" value={`${outputs.days} days (30/360)`} />
         <ResultRow
           label="Daily rate"
           value={formatPercent(outputs.dailyRate, 6)}
@@ -350,6 +350,11 @@ function ResultPanel({
             {centsToDisplay(outputs.totalCents)}
           </span>
         </div>
+
+        <p className="text-xs text-muted-foreground">
+          Uses 30/360 day-count. May differ slightly from the legacy CRM.
+        </p>
+
         {inputs.borrowerRef ? (
           <p className="text-sm text-muted-foreground">
             Borrower: {inputs.borrowerRef}
