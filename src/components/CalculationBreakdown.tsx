@@ -66,8 +66,8 @@ function ScheduledLines({ record }: { record: ScheduledPaymentRecord }) {
         value={centsToReceiptDisplay(inputs.outstandingCents)}
       />
       <Row label="Annual rate" value={`${rate}%`} />
-      <Row label={`Daily rate (${rate}% ÷ 360)`} value={dailyPct} />
-      <Row label="Days (30/360)" value={String(outputs.days)} />
+      <Row label={`Daily rate (${rate}% ÷ 365)`} value={dailyPct} />
+      <Row label="Days (actual)" value={String(outputs.days)} />
       <Eq>
         Interest = {plainMoney(inputs.outstandingCents)} × {dailyPct} ×{" "}
         {outputs.days} = {centsToReceiptDisplay(outputs.interestCents)}
@@ -100,8 +100,8 @@ function FullSettlementLines({ record }: { record: FullSettlementRecord }) {
         value={centsToReceiptDisplay(inputs.outstandingCents)}
       />
       <Row label="Annual rate" value={`${rate}% per year`} />
-      <Row label={`Daily rate (${rate}% ÷ 360)`} value={dailyPct} />
-      <Row label="Days (30/360)" value={String(outputs.days)} />
+      <Row label={`Daily rate (${rate}% ÷ 365)`} value={dailyPct} />
+      <Row label="Days (actual)" value={String(outputs.days)} />
       <Eq>
         Interest = {plainMoney(inputs.outstandingCents)} × {dailyPct} ×{" "}
         {outputs.days} = {centsToReceiptDisplay(outputs.interestCents)}

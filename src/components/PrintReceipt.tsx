@@ -62,7 +62,7 @@ function FullSettlementReceipt({ record }: { record: FullSettlementRecord }) {
           label="Settlement date"
           value={formatYmdReceipt(inputs.payOnDate)}
         />
-        <Row label="Days elapsed" value={`${outputs.days} days (30/360)`} />
+        <Row label="Days elapsed" value={`${outputs.days} days`} />
         <Row
           label="Interest rate"
           value={`${inputs.ratePercent.toFixed(2)}% ${rateLabel}`}
@@ -146,7 +146,7 @@ function ScheduledPaymentReceipt({
         <Row label="Pay-on date" value={formatYmdReceipt(inputs.payOnDate)} />
         <Row
           label="Days since last payment"
-          value={`${outputs.days} days (30/360)`}
+          value={`${outputs.days} days`}
         />
       </div>
 

@@ -284,7 +284,7 @@ function ResultPanel({
       <CardContent className="space-y-3">
         <ResultRow
           label="Days since last payment"
-          value={`${outputs.days} days (30/360)`}
+          value={`${outputs.days} days`}
         />
         <ResultRow
           label="Interest rate"
@@ -315,7 +315,8 @@ function ResultPanel({
         <CalculationBreakdown record={record} variant="screen" />
 
         <p className="text-xs text-muted-foreground">
-          Uses 30/360 day-count. May differ slightly from the legacy CRM.
+          Interest = balance × annual rate ÷ 365 × actual days since last
+          payment.
         </p>
 
         {inputs.borrowerRef ? (

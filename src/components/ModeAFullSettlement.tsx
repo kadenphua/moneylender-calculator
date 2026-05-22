@@ -329,7 +329,7 @@ function ResultPanel({
         <CardTitle>Result</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <ResultRow label="Days" value={`${outputs.days} days (30/360)`} />
+        <ResultRow label="Days" value={`${outputs.days} days`} />
         <ResultRow
           label="Daily rate"
           value={formatPercent(outputs.dailyRate, 6)}
@@ -355,7 +355,8 @@ function ResultPanel({
         <CalculationBreakdown record={record} variant="screen" />
 
         <p className="text-xs text-muted-foreground">
-          Uses 30/360 day-count. May differ slightly from the legacy CRM.
+          Interest = balance × annual rate ÷ 365 × actual days since last
+          payment.
         </p>
 
         {inputs.borrowerRef ? (
