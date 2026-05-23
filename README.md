@@ -110,7 +110,10 @@ No officer action required.
   matches how the real loan ledgers accrue interest.
   > **Interest uses ACTUAL calendar days ÷ 365. The earlier 30/360 ÷360 method
   > (commit 0d5435d) was incorrect and has been reverted. Do not re-introduce
-  > /360.** Any earlier note claiming "30/360 is intentional" is obsolete.
+  > /360.** Works for any mid-schedule borrower (1/8, 6/7, …) via the current
+  > outstanding — the calculator computes one payment at a time and the
+  > schedule position is already reflected in the entered balance. Any earlier
+  > note claiming "30/360 is intentional" is obsolete.
 - **Rounding:** all intermediate math in integer cents. Final display
   rounded half-up (not banker's). Implemented as
   `Math.sign(x) * Math.floor(Math.abs(x) + 0.5)`.
@@ -148,7 +151,7 @@ real loan ledgers.
 
 ### Day count — actual calendar days
 
-`daysBetween(2026-04-21, 2026-05-21) = 30` · `(…, 2026-05-06) = 15` ·
+`daysBetween(2026-04-21, 2026-05-21) = 30` · `(2026-04-01, 2026-04-15) = 14` ·
 `daysBetween(2026-05-21, 2026-06-21) = 31` (real calendar days, **not** 30) ·
 pay-on before last payment → **throws**.
 
@@ -167,8 +170,8 @@ payment date.
 | #  | Case | Asserts |
 |----|------|---------|
 | B1 | **30-day month** — outstanding $2,104.80 @ 39%/yr, monthly $234.52, last 2026-04-21, payOn 2026-05-21 | days = 30, interest = $67.47 `roundHalfUp(210480 × 0.39/365 × 30)`, principal = $167.05, **TODAY = $234.52** (= monthly payment), newOutstanding = $1,937.75. |
-| B2 | **Early payment (15 days)** — same loan, payOn 2026-05-06 | days = 15, interest = $33.73, principal = $200.79, **TODAY = $234.52**, newOutstanding = $1,904.01. |
-| B3 | **31-day calendar month counts 31** — outstanding $5,000 @ 41%/yr, monthly $600, last 2026-05-21, payOn 2026-06-21 | days = 31, interest = $174.11 `roundHalfUp(500000 × 0.41/365 × 31)`, principal = $425.89, newOutstanding = $4,574.11. |
+| B2 | **Early payment within a cycle (14 days)** — outstanding $2,000 @ 39%/yr, monthly $234.52, last 2026-04-01, payOn 2026-04-15 | days = 14, interest = $29.92 `roundHalfUp(200000 × 0.39/365 × 14)`, principal = $204.60, **TODAY = $234.52**, newOutstanding = $1,795.40. |
+| B3 | **Mid-schedule borrower (6 of 7), early (17 days)** — outstanding $1,200 @ 39%/yr, monthly $234.52, last 2026-04-01, payOn 2026-04-18 | days = 17, interest = $21.80 `roundHalfUp(120000 × 0.39/365 × 17)` (2179.726 → 2180; the instruction sheet's $21.79 was the truncated value), principal = $212.72, **TODAY = $234.52**, newOutstanding = $987.28. |
 | B4 | **Same-day payment** — outstanding $1,000 @ 39%/yr, monthly $186.13, last & payOn 2026-04-04 | days = 0, interest = $0.00, principal = $186.13, **TODAY = $186.13**, newOutstanding = $813.87. |
 | B5 | **Real ledger first-payment stub** — outstanding $2,300 @ 39%/yr, monthly $234.52, last (= disbursement) 2025-08-21, payOn 2025-09-06 | days = 16, interest = $39.32 `roundHalfUp(230000 × 0.39/365 × 16)` (must match the CRM Loan 3 first row). |
 | —  | Validation | outstanding > 0, rate > 0, monthly payment > 0, pay-on not before last → **throws**. |

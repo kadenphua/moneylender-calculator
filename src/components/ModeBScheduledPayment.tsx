@@ -201,6 +201,10 @@ export function ModeBScheduledPayment({
                   type="date"
                   {...register("lastPaymentDate")}
                 />
+                <p className="text-xs text-muted-foreground">
+                  The borrower's previous payment date. For their first
+                  payment, enter the loan start (disbursement) date.
+                </p>
               </Field>
 
               <Field
